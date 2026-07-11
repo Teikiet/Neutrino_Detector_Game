@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NeutrinoLab 2D</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #001018; font-family: sans-serif; color: #cfe; }
+  #ui { position: absolute; top: 10px; left: 10px; z-index: 10; }
+  button { background:#0a3; color:#fff; border:none; padding:8px 12px; margin-right:6px; margin-bottom:6px; cursor:pointer; border-radius:4px; }
+  button:hover { background:#0c5; }
+  button:disabled { background:#456; cursor:not-allowed; }
+  button.active { background:#0af; }
+  #guessPanel button { background:#a50; }
+  #guessPanel button:hover { background:#c70; }
+  #replay { background:#06c; }
+  #replay:hover { background:#08e; }
+  #info { position:absolute; bottom:10px; left:10px; font-size:14px; max-width:55%; }
+  #legend { position:absolute; top:10px; right:10px; font-size:13px; text-align:right; }
+  .sw { display:inline-block; width:12px; height:12px; border-radius:2px; margin-left:6px; vertical-align:middle;}
+  #guessPanel { position:absolute; top:120px; left:10px; z-index:10; background:rgba(0,20,30,0.7); padding:12px; border-radius:6px; display:none; width:300px;}
+  #scoreboard { position:absolute; top:10px; left:50%; transform:translateX(-50%); font-size:15px; text-align:center; }
+  #signalWrap { position:absolute; bottom:50px; left:10px; width:280px; z-index:10; font-size:13px; }
+  #signalNum { font-size:22px; font-weight:bold; color:#ff5; }
+  #energyPanel { margin-top:10px; padding-top:10px; border-top:1px solid #2a6a8a; display:none; }
+  #eSlider { width:100%; }
+  #eReadout { font-size:14px; font-weight:bold; color:#ff5; }
+  #eTruth { font-size:13px; color:#0f8; margin-top:4px; }
+  #timeWrap { position:absolute; bottom:95px; left:10px; width:280px; z-index:10; font-size:12px; }
+  #timeOuter { position:relative; width:100%; height:6px; background:#012; border:1px solid #2a6a8a; border-radius:3px; overflow:hidden; margin-top:2px;}
+  #timeInner { height:100%; width:0%; background:#0cf; }
+  .step { opacity:0.4; }
+  .step.active { opacity:1; }
+</style>
+</head>
+<body>
+<div id="ui">
+  <button id="modePlace">Mode: Place Sensors</button>
+  <button id="grid">Auto Grid</button>
+  <button id="fire">Fire Neutrino</button>
+  <button id="replay">▶ Replay Timing</button>
+  <button id="clear">Clear</button>
+  <button id="reset">Reset Game</button>
+</div>
+
+<div id="scoreboard">Round 0 / 10 &nbsp;|&nbsp; Score: 0%</div>
+
+<div id="legend">
+  <div>Color & Size = signal strength (log, turbo):</div>
+  <div>weak <span class="sw" style="background:#30123b"></span>
+       <span class="sw" style="background:#4b0082"></span>
+       <span class="sw" style="background:#6a0dad"></span>
+       <span class="sw" style="background:#8b13da"></span>
+       <span class="sw" style="background:#4169e1"></span>
+       <span class="sw" style="background:#1e90ff"></span>
+       <span class="sw" style="background:#00bfff"></span>
+       <span class="sw" style="background:#00ff7f"></span>
+       <span class="sw" style="background:#ffff00"></span>
+       <span class="sw" style="background:#ff8800"></span>
+       <span class="sw" style="background:#ff0000"></span> strong</div>
+  <div style="margin-top:4px;">Opacity = hit timing (bright early → dim late)</div>
+  <div style="margin-top:6px;">Sensors: <span id="count">0</span></div>
+</div>
+
+<div id="guessPanel">
+  <div class="step active" id="stepFlavor">
+    <div><b>Step 1:</b> Which interaction?</div>
+    <div style="font-size:11px;color:#8ab;margin:4px 0;">Watch the <i>order</i> sensors light up (opacity decreases = time progresses). Higher energy → longer tracks & wider double-bangs.</div>
+    <button data-guess="cascade">Cascade (νₑ / NC)</button>
+    <button data-guess="track">Track (ν_μ CC)</button>
+    <button data-guess="double">Double-bang (ν_τ CC)</button>
+  </div>
+  <div class="step" id="energyPanel">
+    <div><b>Step 2:</b> Estimate the energy</div>
+    <div style="font-size:11px;color:#8ab;margin:4px 0;">Use the total-signal number <i>and</i> the track length / bang separation as clues. Scale is logarithmic.</div>
+    <input type="range" id="eSlider" min="0" max="3000" value="1500">
+    <div>Guess: <span id="eReadout">31.6 GeV</span></div>
+    <button id="eSubmit">Submit Energy</button>
+    <div id="eTruth"></div>
+  </div>
+</div>
+
+<div id="timeWrap">
+  Event time:
+  <div id="timeOuter"><div id="timeInner"></div></div>
+</div>
+
+<div id="signalWrap">
+  Total detected signal:
+  <div><span id="signalNum">0</span> <span style="font-size:13px;color:#8ab;">p.e. (energy proxy)</span></div>
+</div>
+
+<div id="info">
+  Place sensors, then <b>Fire</b>. Color and size show signal strength (dark blue = weak, bright red = strong).
+  Opacity shows when each sensor was hit (bright early → faint late).
+  Cascades bloom outward, tracks sweep in a line,
+  double-bangs light one blob then another. 10 rounds — score = accuracy.
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ---------- Scene ----------
+const scene = new THREE.Scene();
+const viewSize = 100;
+let aspect = window.innerWidth / window.innerHeight;
+const camera = new THREE.OrthographicCamera(
+  -viewSize*aspect/2, viewSize*aspect/2, viewSize/2, -viewSize/2, 0.1, 1000);
+camera.position.z = 10;
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// ---------- Constants ----------
+const E_MIN = 1, E_MAX = 1000;
+const LOG_MIN = Math.log10(E_MIN);
+const LOG_MAX = Math.log10(E_MAX);
+const TOTAL_ROUNDS = 10;
+const ENERGY_TOLERANCE = 1.0;
+const ANIM_DURATION = 1800;   // ms for full timing replay
+const FLASH_TIME = 250;       // ms bright flash on activation
+const DARK_COLOR = 0x222831;  // neutral dark gray = "no signal"
+const MIN_OPACITY = 0.15;     // faintest visible lit sensor (late hits)
+const MAX_OPACITY = 1.0;      // brightest sensor (early hits)
+const MIN_SIZE = 0.1;         // smallest size for weakest signal
+const MAX_SIZE = 2.5;         // largest size for strongest signal
+
+// energy-dependent geometry ranges (grid units)
+const TRACK_MIN = 25, TRACK_MAX = 90;   // track length: low → high energy
+const BANG_MIN  = 12, BANG_MAX  = 55;   // double-bang separation
+const PLAY_HALF = 48;                   // soft bound to keep events mostly on-field
+
+// ---------- State ----------
+let mode = 'place';
+let sensors = [];          // {mesh, x, y, signal, hitTime(0..1)}
+let eventObjects = [];
+let currentTruth = null;
+let round = 0;
+let totalScore = 0;
+let awaitingGuess = false;
+let guessStage = null;
+let flavorCorrect = false;
+
+// timing animation state
+let animating = false;
+let animStart = 0;
+let hasEvent = false;
+let maxTimeEvent = 0;
+
+// ---------- DOM ----------
+const countEl = document.getElementById('count');
+const scoreEl = document.getElementById('scoreboard');
+const guessPanel = document.getElementById('guessPanel');
+const stepFlavor = document.getElementById('stepFlavor');
+const energyPanel = document.getElementById('energyPanel');
+const signalNum = document.getElementById('signalNum');
+const eSlider = document.getElementById('eSlider');
+const eReadout = document.getElementById('eReadout');
+const eTruth = document.getElementById('eTruth');
+const infoEl = document.getElementById('info');
+const timeInner = document.getElementById('timeInner');
+const replayBtn = document.getElementById('replay');
+
+// ---------- Energy sampling ----------
+function sampleEnergy(){
+  const u = Math.random();
+  return Math.pow(10, LOG_MIN + u*(LOG_MAX-LOG_MIN));
+}
+
+function energyNorm(energy){
+  return (Math.log10(energy) - LOG_MIN) / (LOG_MAX - LOG_MIN);
+}
+
+// map signal to 0..1 on LOG scale
+function signalToT(sig, maxSig){
+  if (sig <= 0 || maxSig <= 0) return 0;
+  const DECADES = 2.5;
+  const logMax = Math.log10(maxSig);
+  const logMin = logMax - DECADES;
+  const t = (Math.log10(sig) - logMin) / (logMax - logMin);
+  return Math.max(0, Math.min(1, t));
+}
+
+// signal → size (log-scaled)
+function signalToSize(sig, maxSig){
+  const t = signalToT(sig, maxSig);
+  return MIN_SIZE + t*(MAX_SIZE - MIN_SIZE);
+}
+
+// time → opacity (INVERTED: early hits bright, late hits dim)
+function timeToOpacity(hitTime){
+  return MAX_OPACITY + hitTime*(MIN_OPACITY - MAX_OPACITY);
+}
+
+// ---------- Turbo colormap (mapped to SIGNAL, LOG SCALE) ----------
+// Turbo: deep blue → cyan → green → yellow → orange → red
+const TURBO = [
+  [0.188, 0.071, 0.235], // 0.0  deep blue/purple  (weak signal)
+  [0.294, 0.051, 0.510],
+  [0.417, 0.075, 0.855],
+  [0.255, 0.560, 1.000],
+  [0.118, 0.867, 1.000],
+  [0.000, 1.000, 0.745],
+  [0.118, 1.000, 0.498],
+  [0.529, 1.000, 0.000],
+  [1.000, 1.000, 0.000],
+  [1.000, 0.533, 0.000],
+  [1.000, 0.000, 0.000]   // 1.0  bright red   (strong signal)
+];
+
+// SIGNAL-to-color: t is 0..1 from weak to strong
+function signalColor(t){
+  t = Math.max(0, Math.min(1, t));
+  const n = TURBO.length - 1;
+  const scaled = t * n;
+  const i = Math.min(n - 1, Math.floor(scaled));
+  const f = scaled - i;
+  const a = TURBO[i], b = TURBO[i+1];
+  const c = new THREE.Color();
+  c.setRGB(
+    a[0] + (b[0]-a[0])*f,
+    a[1] + (b[1]-a[1])*f,
+    a[2] + (b[2]-a[2])*f
+  );
+  return c;
+}
+
+// ---------- Sensors ----------
+function addSensor(x, y){
+  const geo = new THREE.CircleGeometry(1.0, 16);
+  const mat = new THREE.MeshBasicMaterial({ color: DARK_COLOR, transparent:true, opacity:1.0 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, y, 1);
+  scene.add(mesh);
+  sensors.push({ mesh, x, y, signal: 0, hitTime: 1 });
+  countEl.textContent = sensors.length;
+}
+
+function buildGrid(){
+  clearSensors();
+  const N = 20, span = 160;
+  for (let i=0;i<N;i++)
+    for (let j=0;j<N;j++){
+      const x = -span/2 + i*(span/(N-1));
+      const y = -span/2 + j*(span/(N-1));
+      addSensor(x, y);
+    }
+}
+
+function clearSensors(){
+  sensors.forEach(s => scene.remove(s.mesh));
+  sensors = [];
+  countEl.textContent = 0;
+}
+
+function setSensorDark(s){
+  s.mesh.material.color.setHex(DARK_COLOR);
+  s.mesh.material.opacity = 1.0;
+  s.mesh.scale.set(1, 1, 1);
+}
+
+// ---------- Deposit (signal + raw time) ----------
+function depositTimed(px, py, strength, timeAtVertex, sensorTimes){
+  sensors.forEach((s, idx) => {
+    const dx = s.x - px, dy = s.y - py;
+    const d2 = dx*dx + dy*dy;
+    const d = Math.sqrt(d2);
+    s.signal += strength / (1 + d2/120);
+    const arrival = timeAtVertex + d;
+    if (arrival < sensorTimes[idx]) sensorTimes[idx] = arrival;
+  });
+}
+
+function resetSensorSignals(){
+  sensors.forEach(s => { s.signal = 0; s.hitTime = 1; setSensorDark(s); });
+}
+
+function totalSignal(){
+  return sensors.reduce((a,s)=>a+s.signal, 0);
+}
+
+// ---------- Event geometry ----------
+function makeBlob(x, y, r){
+  const geo = new THREE.CircleGeometry(r, 24);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent:true, opacity:0.5 });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, 0.5);
+  m.visible = false;
+  scene.add(m);
+  eventObjects.push(m);
+}
+
+function makeTrack(x1,y1,x2,y2){
+  const g = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(x1,y1,0.5), new THREE.Vector3(x2,y2,0.5)]);
+  const mat = new THREE.LineBasicMaterial({ color:0xffffff });
+  const line = new THREE.Line(g, mat);
+  line.visible = false;
+  scene.add(line);
+  eventObjects.push(line);
+}
+
+function clearEventObjects(){
+  eventObjects.forEach(o => scene.remove(o));
+  eventObjects = [];
+}
+
+function revealTruth(){ eventObjects.forEach(o => o.visible = true); }
+
+// ---------- Normalize hit times to 0..1 (LINEAR) ----------
+function normalizeTimes(sensorTimes){
+  let tmin = Infinity, tmax = -Infinity;
+  sensors.forEach((s, i) => {
+    if (s.signal > 0.05){
+      if (sensorTimes[i] < tmin) tmin = sensorTimes[i];
+      if (sensorTimes[i] > tmax) tmax = sensorTimes[i];
+    }
+  });
+  const span = (tmax - tmin) || 1;
+  maxTimeEvent = span;
+  sensors.forEach((s, i) => {
+    s.hitTime = (s.signal > 0.05) ? (sensorTimes[i] - tmin)/span : 2;
+  });
+}
+
+function clampCoord(v){ return Math.max(-PLAY_HALF, Math.min(PLAY_HALF, v)); }
+
+// ---------- Fire ----------
+function fireNeutrino(){
+  if (awaitingGuess) { flash("Finish your guess first!"); return; }
+  if (animating) { flash("Wait for the timing replay to finish."); return; }
+  if (sensors.length === 0) { flash("Place sensors or use Auto Grid first."); return; }
+  if (round >= TOTAL_ROUNDS) { flash("Game over — press Reset Game."); return; }
+
+  resetSensorSignals();
+  clearEventObjects();
+
+  const energy = sampleEnergy();
+  const eNorm = energyNorm(energy);
+  const bright = (Math.log10(energy) - LOG_MIN) + 0.5;
+
+  const types = ['cascade','track','double'];
+  const type = types[Math.floor(Math.random()*3)];
+
+  const cx = (Math.random()-0.5)*50;
+  const cy = (Math.random()-0.5)*50;
+
+  const sensorTimes = new Array(sensors.length).fill(Infinity);
+
+  if (type === 'cascade'){
+    const r = 4 + bright*2;
+    makeBlob(cx, cy, r);
+    depositTimed(cx, cy, bright*8, 0, sensorTimes);
+
+  } else if (type === 'track'){
+    const ang = Math.random()*Math.PI*2;
+    const len = TRACK_MIN + eNorm*(TRACK_MAX - TRACK_MIN) + Math.random()*5;
+    let x1 = cx - Math.cos(ang)*len/2, y1 = cy - Math.sin(ang)*len/2;
+    let x2 = cx + Math.cos(ang)*len/2, y2 = cy + Math.sin(ang)*len/2;
+    x1 = clampCoord(x1); y1 = clampCoord(y1);
+    x2 = clampCoord(x2); y2 = clampCoord(y2);
+    makeTrack(x1,y1,x2,y2);
+    const steps = 16;
+    for (let i=0;i<=steps;i++){
+      const f = i/steps;
+      const px = x1 + (x2-x1)*f;
+      const py = y1 + (y2-y1)*f;
+      const emitTime = f * len * 0.6;
+      depositTimed(px, py, bright*8/steps*2.2, emitTime, sensorTimes);
+    }
+
+  } else {
+    const ang = Math.random()*Math.PI*2;
+    const sep = BANG_MIN + eNorm*(BANG_MAX - BANG_MIN) + Math.random()*4;
+    let ax = cx - Math.cos(ang)*sep/2, ay = cy - Math.sin(ang)*sep/2;
+    let bx = cx + Math.cos(ang)*sep/2, by = cy + Math.sin(ang)*sep/2;
+    ax = clampCoord(ax); ay = clampCoord(ay);
+    bx = clampCoord(bx); by = clampCoord(by);
+    makeBlob(ax, ay, 3+bright*1.5);
+    makeBlob(bx, by, 3+bright*1.5);
+    depositTimed(ax, ay, bright*5, 0, sensorTimes);
+    const delay = sep * 1.2;
+    depositTimed(bx, by, bright*5, delay, sensorTimes);
+  }
+
+  normalizeTimes(sensorTimes);
+  updateSignalNum();
+
+  currentTruth = { type, energy };
+  hasEvent = true;
+  replayBtn.disabled = false;
+
+  startAnimation(() => {
+    awaitingGuess = true;
+    guessStage = 'flavor';
+    flavorCorrect = false;
+    guessPanel.style.display = 'block';
+    stepFlavor.classList.add('active');
+    energyPanel.style.display = 'none';
+    energyPanel.classList.remove('active');
+    eTruth.textContent = '';
+    infoEl.innerHTML = "<b>Step 1:</b> From the pattern and <i>opacity</i> (bright circles early → faint circles late), guess the interaction type. (▶ Replay to re-watch.)";
+  });
+}
+
+// ---------- Timing animation ----------
+let animDoneCallback = null;
+function startAnimation(cb){
+  animating = true;
+  animStart = performance.now();
+  animDoneCallback = cb || null;
+  sensors.forEach(s => setSensorDark(s));
+}
+
+function applySensorLook(s, maxSig){
+  // color & size = signal strength (log scale), opacity = timing (early=bright, late=dim)
+  const signalT = signalToT(s.signal, maxSig);
+  const base = signalColor(signalT);
+  s.mesh.material.color.copy(base);
+  const size = signalToSize(s.signal, maxSig);
+  const opacity = timeToOpacity(s.hitTime);
+  s.mesh.material.opacity = opacity;
+  s.mesh.scale.set(size, size, 1);
+}
+
+function updateAnimation(now){
+  if (!animating) return;
+  const elapsed = now - animStart;
+  const prog = Math.min(1, elapsed / ANIM_DURATION);
+  timeInner.style.width = (prog*100) + '%';
+
+  let maxSig = 0;
+  sensors.forEach(s => { if (s.signal > maxSig) maxSig = s.signal; });
+  if (maxSig <= 0) maxSig = 1;
+
+  sensors.forEach(s => {
+    if (s.hitTime > 1) return;
+    if (prog >= s.hitTime){
+      applySensorLook(s, maxSig);
+      const sinceHit = (prog - s.hitTime) * ANIM_DURATION;
+      if (sinceHit < FLASH_TIME){
+        const k = 1 - sinceHit/FLASH_TIME;
+        const c = s.mesh.material.color.clone().lerp(new THREE.Color(0xffffff), 0.7*k);
+        s.mesh.material.color.copy(c);
+        s.mesh.material.opacity = Math.min(1.0, s.mesh.material.opacity + 0.3*k);
+        const flashScale = s.mesh.scale.x + 0.3*k;
+        s.mesh.scale.set(flashScale, flashScale, 1);
+      }
+    } else {
+      setSensorDark(s);
+    }
+  });
+
+  if (prog >= 1){
+    animating = false;
+    sensors.forEach(s => {
+      if (s.hitTime > 1) { setSensorDark(s); return; }
+      applySensorLook(s, maxSig);
+    });
+    if (animDoneCallback){ const cb = animDoneCallback; animDoneCallback = null; cb(); }
+  }
+}
+
+function replayTiming(){
+  if (!hasEvent) { flash("Fire an event first."); return; }
+  if (animating) return;
+  startAnimation(null);
+}
+
+// ---------- Signal number ----------
+function updateSignalNum(){
+  const tot = totalSignal();
+  signalNum.textContent = tot.toFixed(tot<100?1:0);
+}
+
+// ---------- Flavor guess ----------
+function submitFlavorGuess(type){
+  if (!awaitingGuess || guessStage !== 'flavor') return;
+  flavorCorrect = (type === currentTruth.type);
+  guessStage = 'energy';
+  stepFlavor.classList.remove('active');
+  energyPanel.style.display = 'block';
+  energyPanel.classList.add('active');
+  const names = {cascade:'Cascade', track:'Track', double:'Double-bang'};
+  infoEl.innerHTML = `Flavor guess: <b>${flavorCorrect?'<span style="color:#0f8">correct</span>':'<span style="color:#f66">wrong</span> (was '+names[currentTruth.type]+')'}</b>. ` +
+                     `<br><b>Step 2:</b> Estimate the energy from the total-signal number & event size.`;
+  updateEReadout();
+}
+
+// ---------- Energy slider ----------
+function sliderToEnergy(v){
+  const frac = v / 3000;
+  return Math.pow(10, LOG_MIN + frac*(LOG_MAX-LOG_MIN));
+}
+function updateEReadout(){
+  const e = sliderToEnergy(parseFloat(eSlider.value));
+  eReadout.textContent = e.toFixed(e<10?1:0) + ' GeV';
+}
+
+function submitEnergyGuess(){
+  if (!awaitingGuess || guessStage !== 'energy') return;
+  const eGuess = sliderToEnergy(parseFloat(eSlider.value));
+  const eTrue = currentTruth.energy;
+  const err = Math.abs(Math.log10(eGuess) - Math.log10(eTrue));
+  const eScore = Math.max(0, 1 - err/ENERGY_TOLERANCE);
+  const roundScore = 0.5*(flavorCorrect?1:0) + 0.5*eScore;
+  totalScore += roundScore;
+  round++;
+
+  eTruth.innerHTML = `True energy: <b>${eTrue.toFixed(eTrue<10?1:0)} GeV</b> ` +
+                     `(off by ${err.toFixed(2)} decades → ${(eScore*100).toFixed(0)}% energy credit)`;
+  revealTruth();
+  updateScoreboard();
+  awaitingGuess = false;
+  guessStage = null;
+
+  setTimeout(() => {
+    if (round >= TOTAL_ROUNDS){
+      infoEl.innerHTML = `<b>Game over!</b> Final score: <b>${((totalScore/TOTAL_ROUNDS)*100).toFixed(1)}%</b> over ${TOTAL_ROUNDS} rounds. Press <b>Reset Game</b>.`;
+    } else {
+      infoEl.innerHTML = "Round scored. Press <b>Fire Neutrino</b> for the next event.";
+    }
+  }, 100);
+}
+
+// ---------- Scoreboard ----------
+function updateScoreboard(){
+  const pct = round>0 ? (totalScore/round*100) : 0;
+  scoreEl.innerHTML = `Round ${round} / ${TOTAL_ROUNDS} &nbsp;|&nbsp; Score: ${pct.toFixed(0)}%`;
+}
+
+// ---------- Reset / clear ----------
+function resetGame(){
+  round = 0; totalScore = 0; awaitingGuess = false; guessStage = null;
+  currentTruth = null; hasEvent = false; animating = false;
+  clearEventObjects();
+  resetSensorSignals();
+  signalNum.textContent = '0';
+  timeInner.style.width = '0%';
+  guessPanel.style.display = 'none';
+  replayBtn.disabled = true;
+  updateScoreboard();
+  infoEl.innerHTML = "Game reset. Place sensors and press <b>Fire Neutrino</b> to begin.";
+}
+
+function clearAll(){
+  clearSensors();
+  clearEventObjects();
+  signalNum.textContent = '0';
+  timeInner.style.width = '0%';
+  guessPanel.style.display = 'none';
+  awaitingGuess = false; hasEvent = false; animating = false;
+  replayBtn.disabled = true;
+}
+
+// ---------- Flash ----------
+let flashTimer = null;
+function flash(msg){
+  const prev = infoEl.innerHTML;
+  infoEl.innerHTML = `<span style="color:#ff8">${msg}</span>`;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(()=>{ if(!awaitingGuess) infoEl.innerHTML = prev; }, 1800);
+}
+
+// ---------- Input ----------
+const modeBtn = document.getElementById('modePlace');
+renderer.domElement.addEventListener('click', (e)=>{
+  if (mode !== 'place') return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const nx = ((e.clientX-rect.left)/rect.width)*2 - 1;
+  const ny = -(((e.clientY-rect.top)/rect.height)*2 - 1);
+  const wx = nx * (viewSize*aspect/2);
+  const wy = ny * (viewSize/2);
+  addSensor(wx, wy);
+});
+
+modeBtn.onclick = ()=>{
+  mode = (mode==='place') ? 'view' : 'place';
+  modeBtn.textContent = 'Mode: ' + (mode==='place' ? 'Place Sensors' : 'View');
+  modeBtn.classList.toggle('active', mode==='place');
+};
+document.getElementById('grid').onclick = buildGrid;
+document.getElementById('fire').onclick = fireNeutrino;
+document.getElementById('clear').onclick = clearAll;
+document.getElementById('reset').onclick = resetGame;
+replayBtn.onclick = replayTiming;
+replayBtn.disabled = true;
+
+document.querySelectorAll('#stepFlavor button').forEach(btn=>{
+  btn.onclick = ()=> submitFlavorGuess(btn.dataset.guess);
+});
+eSlider.addEventListener('input', updateEReadout);
+document.getElementById('eSubmit').onclick = submitEnergyGuess;
+
+updateScoreboard();
+
+// ---------- Render loop ----------
+function animate(now){
+  requestAnimationFrame(animate);
+  updateAnimation(now || performance.now());
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(animate);
+
+window.addEventListener('resize', ()=>{
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h);
+  aspect = w/h;
+  camera.left=-viewSize*aspect/2; camera.right=viewSize*aspect/2;
+  camera.top=viewSize/2; camera.bottom=-viewSize/2;
+  camera.updateProjectionMatrix();
+});
+</script>
+</body>
+</html>
