@@ -14,6 +14,9 @@
   #guessPanel button:hover { background:#c70; }
   #replay { background:#06c; }
   #replay:hover { background:#08e; }
+  #viewResults { background:#0f8; }
+  #viewResults:hover { background:#0f8; }
+  #viewResults:disabled { background:#456; }
   #info { position:absolute; bottom:10px; left:10px; font-size:14px; max-width:55%; }
   #legend { position:absolute; top:10px; right:10px; font-size:13px; text-align:right; }
   .sw { display:inline-block; width:12px; height:12px; border-radius:2px; margin-left:6px; vertical-align:middle;}
@@ -30,6 +33,28 @@
   #timeInner { height:100%; width:0%; background:#0cf; }
   .step { opacity:0.4; }
   .step.active { opacity:1; }
+  #resultsModal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); display:none; z-index:100; overflow-y:auto; }
+  #resultsContent { background:#001a2a; margin:40px auto; padding:30px; border:1px solid #2a6a8a; border-radius:8px; max-width:900px; color:#cfe; }
+  #resultsContent h1 { color:#0f8; margin-top:0; }
+  #resultsContent h2 { color:#0af; margin-top:20px; }
+  #energyChartWrap { position:relative; width:100%; height:350px; background:#012; border:1px solid #2a6a8a; border-radius:4px; margin:15px 0; }
+  #flavorChart { display:flex; gap:30px; margin:20px 0; justify-content:center; flex-wrap:wrap; }
+  .flavorBox { text-align:center; background:rgba(0,50,80,0.5); padding:20px; border-radius:6px; border:1px solid #2a6a8a; }
+  .flavorBox .label { font-size:14px; color:#8ab; }
+  .flavorBox .bar { display:flex; height:200px; gap:8px; align-items:flex-end; margin:10px 0; }
+  .flavorBox .bar div { flex:1; background:#0af; border-radius:4px 4px 0 0; position:relative; }
+  .flavorBox .bar div.actual { background:#0f8; }
+  .flavorBox .bar div.guess { background:#f66; }
+  .flavorBox .bar div span { position:absolute; top:-20px; left:50%; transform:translateX(-50%); font-weight:bold; font-size:12px; }
+  .closeBtn { background:#a50; padding:10px 20px; cursor:pointer; border-radius:4px; border:none; color:#fff; float:right; margin-bottom:20px; }
+  .closeBtn:hover { background:#c70; }
+  #flavorRatio { display:flex; gap:40px; justify-content:center; flex-wrap:wrap; margin:15px 0 25px; }
+  .ratioBlock { text-align:center; }
+  .ratioBlock .ratioLabel { font-size:13px; color:#8ab; margin-bottom:6px; }
+  .ratioBlock .ratioValue { font-size:22px; font-weight:bold; }
+  .ratioBlock .ratioValue.you { color:#f66; }
+  .ratioBlock .ratioValue.actual { color:#0f8; }
+  .ratioNote { text-align:center; font-size:12px; color:#8ab; max-width:600px; margin:0 auto; }
 </style>
 </head>
 <body>
@@ -39,7 +64,9 @@
   <button id="fire">Fire Neutrino</button>
   <button id="replay">▶ Replay Timing</button>
   <button id="clear">Clear</button>
+  <button id="roundsInput">Rounds: 10</button>
   <button id="reset">Reset Game</button>
+  <button id="viewResults" disabled>View Results</button>
 </div>
 
 <div id="scoreboard">Round 0 / 10 &nbsp;|&nbsp; Score: 0%</div>
@@ -96,7 +123,26 @@
   double-bangs light one blob then another. 10 rounds — score = accuracy.
 </div>
 
+<div id="resultsModal">
+  <div id="resultsContent">
+    <button class="closeBtn" onclick="closeResults()">✕ Close</button>
+    <h1>🎯 Game Results</h1>
+    
+    <h2>Final Score: <span id="finalScore">0</span>%</h2>
+    
+    <h2>Energy Spectrum Comparison</h2>
+    <div id="energyChartWrap"><canvas id="energyChart"></canvas></div>
+    
+    <h2>Neutrino Flavor Detection</h2>
+    <div id="flavorChart"></div>
+
+    <h2>Flavor Ratio: Your Reconstruction vs Actual</h2>
+    <div id="flavorRatio"></div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script>
 // ---------- Scene ----------
 const scene = new THREE.Scene();
@@ -114,24 +160,23 @@ document.body.appendChild(renderer.domElement);
 const E_MIN = 1, E_MAX = 1000;
 const LOG_MIN = Math.log10(E_MIN);
 const LOG_MAX = Math.log10(E_MAX);
-const TOTAL_ROUNDS = 10;
+let TOTAL_ROUNDS = 10;
 const ENERGY_TOLERANCE = 1.0;
-const ANIM_DURATION = 1800;   // ms for full timing replay
-const FLASH_TIME = 250;       // ms bright flash on activation
-const DARK_COLOR = 0x222831;  // neutral dark gray = "no signal"
-const MIN_OPACITY = 0.15;     // faintest visible lit sensor (late hits)
-const MAX_OPACITY = 1.0;      // brightest sensor (early hits)
-const MIN_SIZE = 0.1;         // smallest size for weakest signal
-const MAX_SIZE = 2.5;         // largest size for strongest signal
+const ANIM_DURATION = 1800;
+const FLASH_TIME = 250;
+const DARK_COLOR = 0x222831;
+const MIN_OPACITY = 0.15;
+const MAX_OPACITY = 1.0;
+const MIN_SIZE = 0.1;
+const MAX_SIZE = 2.5;
 
-// energy-dependent geometry ranges (grid units)
-const TRACK_MIN = 25, TRACK_MAX = 90;   // track length: low → high energy
-const BANG_MIN  = 12, BANG_MAX  = 55;   // double-bang separation
-const PLAY_HALF = 48;                   // soft bound to keep events mostly on-field
+const TRACK_MIN = 25, TRACK_MAX = 900;
+const BANG_MIN  = 12, BANG_MAX  = 550;
+const PLAY_HALF = 48;
 
 // ---------- State ----------
 let mode = 'place';
-let sensors = [];          // {mesh, x, y, signal, hitTime(0..1)}
+let sensors = [];
 let eventObjects = [];
 let currentTruth = null;
 let round = 0;
@@ -140,7 +185,13 @@ let awaitingGuess = false;
 let guessStage = null;
 let flavorCorrect = false;
 
-// timing animation state
+let energyGuesses = [];
+let energyTruths = [];
+let flavorCounts = { cascade: 0, track: 0, double: 0 };
+let flavorGuesses = { cascade: 0, track: 0, double: 0 };
+let userFlavorTally = { cascade: 0, track: 0, double: 0 }; // what the player guessed, right or wrong
+let currentGuessType = null;
+
 let animating = false;
 let animStart = 0;
 let hasEvent = false;
@@ -159,6 +210,8 @@ const eTruth = document.getElementById('eTruth');
 const infoEl = document.getElementById('info');
 const timeInner = document.getElementById('timeInner');
 const replayBtn = document.getElementById('replay');
+const roundsBtn = document.getElementById('roundsInput');
+const viewResultsBtn = document.getElementById('viewResults');
 
 // ---------- Energy sampling ----------
 function sampleEnergy(){
@@ -170,7 +223,6 @@ function energyNorm(energy){
   return (Math.log10(energy) - LOG_MIN) / (LOG_MAX - LOG_MIN);
 }
 
-// map signal to 0..1 on LOG scale
 function signalToT(sig, maxSig){
   if (sig <= 0 || maxSig <= 0) return 0;
   const DECADES = 2.5;
@@ -180,21 +232,18 @@ function signalToT(sig, maxSig){
   return Math.max(0, Math.min(1, t));
 }
 
-// signal → size (log-scaled)
 function signalToSize(sig, maxSig){
   const t = signalToT(sig, maxSig);
   return MIN_SIZE + t*(MAX_SIZE - MIN_SIZE);
 }
 
-// time → opacity (INVERTED: early hits bright, late hits dim)
 function timeToOpacity(hitTime){
   return MAX_OPACITY + hitTime*(MIN_OPACITY - MAX_OPACITY);
 }
 
-// ---------- Turbo colormap (mapped to SIGNAL, LOG SCALE) ----------
-// Turbo: deep blue → cyan → green → yellow → orange → red
+// ---------- Turbo colormap ----------
 const TURBO = [
-  [0.188, 0.071, 0.235], // 0.0  deep blue/purple  (weak signal)
+  [0.188, 0.071, 0.235],
   [0.294, 0.051, 0.510],
   [0.417, 0.075, 0.855],
   [0.255, 0.560, 1.000],
@@ -204,10 +253,9 @@ const TURBO = [
   [0.529, 1.000, 0.000],
   [1.000, 1.000, 0.000],
   [1.000, 0.533, 0.000],
-  [1.000, 0.000, 0.000]   // 1.0  bright red   (strong signal)
+  [1.000, 0.000, 0.000]
 ];
 
-// SIGNAL-to-color: t is 0..1 from weak to strong
 function signalColor(t){
   t = Math.max(0, Math.min(1, t));
   const n = TURBO.length - 1;
@@ -258,7 +306,6 @@ function setSensorDark(s){
   s.mesh.scale.set(1, 1, 1);
 }
 
-// ---------- Deposit (signal + raw time) ----------
 function depositTimed(px, py, strength, timeAtVertex, sensorTimes){
   sensors.forEach((s, idx) => {
     const dx = s.x - px, dy = s.y - py;
@@ -278,7 +325,6 @@ function totalSignal(){
   return sensors.reduce((a,s)=>a+s.signal, 0);
 }
 
-// ---------- Event geometry ----------
 function makeBlob(x, y, r){
   const geo = new THREE.CircleGeometry(r, 24);
   const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent:true, opacity:0.5 });
@@ -306,7 +352,6 @@ function clearEventObjects(){
 
 function revealTruth(){ eventObjects.forEach(o => o.visible = true); }
 
-// ---------- Normalize hit times to 0..1 (LINEAR) ----------
 function normalizeTimes(sensorTimes){
   let tmin = Infinity, tmax = -Infinity;
   sensors.forEach((s, i) => {
@@ -329,7 +374,7 @@ function fireNeutrino(){
   if (awaitingGuess) { flash("Finish your guess first!"); return; }
   if (animating) { flash("Wait for the timing replay to finish."); return; }
   if (sensors.length === 0) { flash("Place sensors or use Auto Grid first."); return; }
-  if (round >= TOTAL_ROUNDS) { flash("Game over — press Reset Game."); return; }
+  if (round >= TOTAL_ROUNDS) { flash("Game over — press View Results."); return; }
 
   resetSensorSignals();
   clearEventObjects();
@@ -412,7 +457,6 @@ function startAnimation(cb){
 }
 
 function applySensorLook(s, maxSig){
-  // color & size = signal strength (log scale), opacity = timing (early=bright, late=dim)
   const signalT = signalToT(s.signal, maxSig);
   const base = signalColor(signalT);
   s.mesh.material.color.copy(base);
@@ -475,6 +519,8 @@ function updateSignalNum(){
 // ---------- Flavor guess ----------
 function submitFlavorGuess(type){
   if (!awaitingGuess || guessStage !== 'flavor') return;
+  currentGuessType = type;
+  userFlavorTally[type]++;
   flavorCorrect = (type === currentTruth.type);
   guessStage = 'energy';
   stepFlavor.classList.remove('active');
@@ -506,6 +552,12 @@ function submitEnergyGuess(){
   totalScore += roundScore;
   round++;
 
+  // Track for results
+  energyGuesses.push(eGuess);
+  energyTruths.push(eTrue);
+  flavorCounts[currentTruth.type]++;
+  flavorGuesses[currentTruth.type] += flavorCorrect ? 1 : 0;
+
   eTruth.innerHTML = `True energy: <b>${eTrue.toFixed(eTrue<10?1:0)} GeV</b> ` +
                      `(off by ${err.toFixed(2)} decades → ${(eScore*100).toFixed(0)}% energy credit)`;
   revealTruth();
@@ -515,7 +567,8 @@ function submitEnergyGuess(){
 
   setTimeout(() => {
     if (round >= TOTAL_ROUNDS){
-      infoEl.innerHTML = `<b>Game over!</b> Final score: <b>${((totalScore/TOTAL_ROUNDS)*100).toFixed(1)}%</b> over ${TOTAL_ROUNDS} rounds. Press <b>Reset Game</b>.`;
+      viewResultsBtn.disabled = false;
+      infoEl.innerHTML = `<b>Game over!</b> Final score: <b>${((totalScore/TOTAL_ROUNDS)*100).toFixed(1)}%</b> over ${TOTAL_ROUNDS} rounds. Press <b>View Results</b> button.`;
     } else {
       infoEl.innerHTML = "Round scored. Press <b>Fire Neutrino</b> for the next event.";
     }
@@ -528,16 +581,194 @@ function updateScoreboard(){
   scoreEl.innerHTML = `Round ${round} / ${TOTAL_ROUNDS} &nbsp;|&nbsp; Score: ${pct.toFixed(0)}%`;
 }
 
+// ---------- Energy spectrum reconstruction ----------
+// The generator draws energy uniformly in log10(E) over [LOG_MIN, LOG_MAX].
+// That sampling is exactly what produces a flux dN/dE ∝ 1/E ("E^-1 spectrum"):
+// with x = log10(E) uniform on an interval of length L, dN/dE = N / (L * ln10 * E).
+function buildEnergyHistogram(values, nBins){
+  const edges = [];
+  for (let i=0;i<=nBins;i++) edges.push(LOG_MIN + (i/nBins)*(LOG_MAX-LOG_MIN));
+  const counts = new Array(nBins).fill(0);
+  values.forEach(v => {
+    let idx = Math.floor((Math.log10(v) - LOG_MIN) / (LOG_MAX-LOG_MIN) * nBins);
+    idx = Math.max(0, Math.min(nBins-1, idx));
+    counts[idx]++;
+  });
+  return edges.map((_, i) => {
+    if (i >= nBins) return null;
+    const eLo = Math.pow(10, edges[i]);
+    const eHi = Math.pow(10, edges[i+1]);
+    const eCenter = Math.sqrt(eLo*eHi); // geometric mean for log-spaced bin
+    const dE = eHi - eLo;
+    const flux = dE > 0 ? counts[i]/dE : 0;
+    return { eCenter, flux, count: counts[i], eLo, eHi };
+  }).filter(Boolean);
+}
+
+function theoreticalSpectrumPoints(N){
+  // dN/dE = C / E, with C chosen so the curve carries the same total N over [E_MIN, E_MAX]
+  const L = LOG_MAX - LOG_MIN;
+  const C = N / (L * Math.LN10);
+  const pts = [];
+  const steps = 60;
+  for (let i=0;i<=steps;i++){
+    const logE = LOG_MIN + (i/steps)*(LOG_MAX-LOG_MIN);
+    const E = Math.pow(10, logE);
+    pts.push({ x: E, y: C/E });
+  }
+  return pts;
+}
+
+// ---------- Results Modal ----------
+function showResults(){
+  const finalScore = (totalScore/TOTAL_ROUNDS*100).toFixed(1);
+  document.getElementById('finalScore').textContent = finalScore;
+
+  // Energy spectrum: bin true energies and guessed energies in log-E bins,
+  // convert counts -> flux (dN/dE), and overlay the theoretical E^-1 curve.
+  const N = energyTruths.length;
+  const nBins = Math.max(5, Math.min(12, Math.round(N/2)));
+  const trueHist = buildEnergyHistogram(energyTruths, nBins);
+  const guessHist = buildEnergyHistogram(energyGuesses, nBins);
+  const theoryPts = theoreticalSpectrumPoints(N);
+
+  const eCtx = document.getElementById('energyChart');
+  if (eCtx._chart) eCtx._chart.destroy();
+  eCtx._chart = new Chart(eCtx, {
+    type: 'scatter',
+    data: {
+      datasets: [
+        {
+          label: 'Theoretical spectrum (E⁻¹)',
+          data: theoryPts,
+          type: 'line',
+          borderColor: '#0af',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          order: 3
+        },
+        {
+          label: 'True energies (generated)',
+          data: trueHist.map(b => ({ x: b.eCenter, y: b.flux > 0 ? b.flux : null })),
+          borderColor: '#0f8',
+          backgroundColor: '#0f8',
+          borderWidth: 2,
+          pointRadius: 5,
+          showLine: true,
+          borderDash: [5, 5],
+          order: 2
+        },
+        {
+          label: 'Your reconstructed spectrum',
+          data: guessHist.map(b => ({ x: b.eCenter, y: b.flux > 0 ? b.flux : null })),
+          borderColor: '#f66',
+          backgroundColor: '#f66',
+          borderWidth: 2,
+          pointRadius: 5,
+          showLine: true,
+          order: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#cfe' } }
+      },
+      scales: {
+        x: {
+          type: 'logarithmic',
+          min: E_MIN,
+          max: E_MAX,
+          title: { display: true, text: 'Energy E (GeV, log scale)', color: '#cfe' },
+          ticks: { color: '#cfe' },
+          grid: { color: 'rgba(100,100,100,0.2)' }
+        },
+        y: {
+          type: 'logarithmic',
+          title: { display: true, text: 'Flux  dN/dE  (events per GeV)', color: '#cfe' },
+          ticks: { color: '#cfe' },
+          grid: { color: 'rgba(100,100,100,0.2)' }
+        }
+      }
+    }
+  });
+
+  // Flavor Charts (per-flavor ID accuracy)
+  const flavorHTML = ['cascade', 'track', 'double'].map(flavor => {
+    const total = flavorCounts[flavor];
+    const correct = flavorGuesses[flavor];
+    const pct = total > 0 ? Math.round(correct/total*100) : 0;
+    const flavorName = {cascade: 'Cascade (νₑ/NC)', track: 'Track (ν_μ)', double: 'Double-bang (ν_τ)'}[flavor];
+    return `
+      <div class="flavorBox">
+        <div class="label">${flavorName}</div>
+        <div class="bar">
+          <div class="actual" style="width:${total>0?100:0}%; min-width: 30px;"><span>${total}</span></div>
+        </div>
+        <div style="font-size:12px; color:#0f8;">True: ${total}</div>
+        <div class="bar">
+          <div class="guess" style="width:${total>0?correct/total*100:0}%; min-width: 30px;"><span>${correct}</span></div>
+        </div>
+        <div style="font-size:12px; color:#f66;">Correct: ${correct}/${total} (${pct}%)</div>
+      </div>
+    `;
+  }).join('');
+  document.getElementById('flavorChart').innerHTML = flavorHTML;
+
+  // Flavor ratio a:b:c — what the player guessed vs the game's actual design ratio.
+  // The generator draws each flavor with equal probability, so the true underlying
+  // ratio is exactly 1:1:1 (the observed counts above will only approximate that for small N).
+  const order = ['cascade','track','double'];
+  const guessCounts = order.map(f => userFlavorTally[f]);
+  const gcd = (a,b) => b === 0 ? a : gcd(b, a%b);
+  const g = guessCounts.reduce((a,b) => gcd(a,b), guessCounts[0] || 1) || 1;
+  const reduced = g > 0 ? guessCounts.map(c => Math.round(c/g)) : guessCounts;
+  const guessRatioStr = guessCounts.join(':');
+  const reducedRatioStr = (g > 1) ? ` (≈ ${reduced.join(':')})` : '';
+
+  document.getElementById('flavorRatio').innerHTML = `
+    <div class="ratioBlock">
+      <div class="ratioLabel">Your guessed flavor mix<br>(cascade : track : double)</div>
+      <div class="ratioValue you">${guessRatioStr}${reducedRatioStr}</div>
+    </div>
+    <div class="ratioBlock">
+      <div class="ratioLabel">Actual game design ratio<br>(cascade : track : double)</div>
+      <div class="ratioValue actual">1 : 1 : 1</div>
+    </div>
+  `;
+  const ratioNote = document.createElement('div');
+  ratioNote.className = 'ratioNote';
+  ratioNote.textContent = `Every event is drawn uniformly at random from the three interaction types, so the true flavor ratio is 1:1:1 by design. The counts drawn this game were ${order.map(f=>flavorCounts[f]).join(':')}, and your guesses came out to ${guessRatioStr}.`;
+  document.getElementById('flavorRatio').appendChild(ratioNote);
+
+  document.getElementById('resultsModal').style.display = 'block';
+}
+
+function closeResults(){
+  document.getElementById('resultsModal').style.display = 'none';
+}
+
 // ---------- Reset / clear ----------
 function resetGame(){
   round = 0; totalScore = 0; awaitingGuess = false; guessStage = null;
   currentTruth = null; hasEvent = false; animating = false;
+  energyGuesses = [];
+  energyTruths = [];
+  flavorCounts = { cascade: 0, track: 0, double: 0 };
+  flavorGuesses = { cascade: 0, track: 0, double: 0 };
+  userFlavorTally = { cascade: 0, track: 0, double: 0 };
+  currentGuessType = null;
   clearEventObjects();
   resetSensorSignals();
   signalNum.textContent = '0';
   timeInner.style.width = '0%';
   guessPanel.style.display = 'none';
   replayBtn.disabled = true;
+  viewResultsBtn.disabled = true;
   updateScoreboard();
   infoEl.innerHTML = "Game reset. Place sensors and press <b>Fire Neutrino</b> to begin.";
 }
@@ -550,6 +781,16 @@ function clearAll(){
   guessPanel.style.display = 'none';
   awaitingGuess = false; hasEvent = false; animating = false;
   replayBtn.disabled = true;
+}
+
+// ---------- Rounds input ----------
+function setRounds(){
+  const n = prompt(`Enter number of rounds (current: ${TOTAL_ROUNDS}):`, TOTAL_ROUNDS);
+  if (n && !isNaN(n) && n > 0){
+    TOTAL_ROUNDS = parseInt(n);
+    roundsBtn.textContent = `Rounds: ${TOTAL_ROUNDS}`;
+    resetGame();
+  }
 }
 
 // ---------- Flash ----------
@@ -582,8 +823,11 @@ document.getElementById('grid').onclick = buildGrid;
 document.getElementById('fire').onclick = fireNeutrino;
 document.getElementById('clear').onclick = clearAll;
 document.getElementById('reset').onclick = resetGame;
+roundsBtn.onclick = setRounds;
 replayBtn.onclick = replayTiming;
+viewResultsBtn.onclick = showResults;
 replayBtn.disabled = true;
+viewResultsBtn.disabled = true;
 
 document.querySelectorAll('#stepFlavor button').forEach(btn=>{
   btn.onclick = ()=> submitFlavorGuess(btn.dataset.guess);
