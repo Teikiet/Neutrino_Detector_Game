@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Muon Ring — IACT Cherenkov Imager</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  :root {
+    --bg: #070a12;
+    --panel: #0f1524;
+    --panel2: #121a2c;
+    --accent: #4fd7ff;
+    --accent-dim: #2a7f96;
+    --accent2: #ffb454;
+    --good: #7dffb0;
+    --text: #dce6f5;
+    --muted: #7488a6;
+    --line: #1e2a40;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "Segoe UI", Roboto, Arial, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, #10203a 0%, transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, #1a1030 0%, transparent 55%),
+      var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    padding: 14px 22px; background: linear-gradient(180deg, #0d1220, #0a0e18);
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 {
+    font-size: 19px; margin: 0; color: var(--accent);
+    letter-spacing: 0.5px; text-shadow: 0 0 18px rgba(79,215,255,0.35);
+  }
+  header .sub { font-size: 12.5px; color: var(--muted); }
+  header .hint { margin-left: auto; font-size: 11px; color: var(--muted); }
+  header .hint kbd {
+    background: #182238; border: 1px solid var(--line); border-radius: 4px;
+    padding: 1px 6px; color: var(--text); font-family: monospace;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 320px 1fr 1fr;
+    gap: 14px; padding: 14px;
+    align-items: stretch;
+  }
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .controls {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px; overflow-y: auto;
+    max-height: calc(100vh - 100px);
+  }
+  .view {
+    background: #04060c; border: 1px solid var(--line);
+    border-radius: 12px; position: relative;
+    display: flex; flex-direction: column; min-height: 420px;
+  }
+  .view h2 {
+    font-size: 12px; margin: 0; padding: 10px 14px;
+    color: var(--muted); border-bottom: 1px solid var(--line);
+    text-transform: uppercase; letter-spacing: 1.2px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .view h2 .badge {
+    font-size: 10px; padding: 2px 7px; border-radius: 20px;
+    background: rgba(79,215,255,0.12); color: var(--accent);
+    text-transform: none; letter-spacing: 0;
+    white-space: nowrap;
+  }
+  canvas { width: 100%; flex: 1; display: block; }
+  canvas#sideView { cursor: grab; }
+  canvas#sideView:active { cursor: grabbing; }
+
+  .group {
+    margin-bottom: 16px; padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .group:last-child { border-bottom: none; margin-bottom: 0; }
+  .group h3 {
+    font-size: 11px; margin: 0 0 10px; color: var(--accent2);
+    text-transform: uppercase; letter-spacing: 1.4px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  label { display: block; font-size: 12px; margin: 9px 0 3px; color: var(--muted); }
+  .val { float: right; color: var(--text); font-variant-numeric: tabular-nums; font-family: monospace; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  select {
+    width: 100%; background: #0a1120; color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 7px;
+    font-size: 12.5px;
+  }
+  .modeRow { display: flex; gap: 6px; margin-bottom: 10px; }
+  .modeRow button {
+    flex: 1; margin: 0; padding: 7px 4px; font-size: 11.5px;
+    background: #0a1120; color: var(--muted); border: 1px solid var(--line);
+  }
+  .modeRow button.active {
+    background: rgba(79,215,255,0.14); color: var(--accent); border-color: var(--accent-dim);
+  }
+  button {
+    width: 100%; padding: 11px; margin-top: 10px;
+    background: var(--accent); color: #041018; border: none;
+    border-radius: 8px; font-weight: 700; cursor: pointer;
+    font-size: 13.5px; letter-spacing: 0.3px;
+    transition: filter 0.1s, transform 0.05s;
+  }
+  button:hover { filter: brightness(1.12); }
+  button:active { transform: scale(0.98); }
+  button.secondary { background: #1b2740; color: var(--text); }
+  button.ghost {
+    background: transparent; color: var(--accent); border: 1px solid var(--accent-dim);
+    padding: 7px; font-size: 11.5px; margin-top: 6px;
+  }
+  .fillRow { display: flex; gap: 6px; flex-wrap: wrap; }
+  .fillRow button { flex: 1 1 44%; }
+
+  .stat { font-size: 12px; color: var(--muted); margin-top: 6px; display: flex; justify-content: space-between; }
+  .stat b { color: var(--text); font-family: monospace; font-weight: 600; }
+  .stat b.hi { color: var(--good); }
+  .stat b.warn { color: var(--accent2); }
+
+  #editorCanvas {
+    width: 100%; height: 200px; display: block; border-radius: 8px;
+    border: 1px solid var(--line); background: #04060c; cursor: crosshair;
+    margin-top: 4px;
+  }
+  .editorHint { font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>◎ Muon Ring — IACT Cherenkov Imager</h1>
+  <span class="sub">Fire a cosmic muon · Davies–Cotton optics · segmented SiPM camera</span>
+  <span class="hint"><kbd>space</kbd> fire &nbsp; <kbd>c</kbd> clear &nbsp; <kbd>s</kbd> shower mode</span>
+</header>
+
+<div class="layout">
+  <!-- ===================== CONTROL PANEL ===================== -->
+  <div class="controls">
+
+    <div class="group">
+      <h3>☄ Muon Track</h3>
+      <label>Impact offset (m) <span class="val" id="v_impactX">0.0</span></label>
+      <input type="range" id="impactX" min="-6" max="6" step="0.01" value="0">
+      <label>Zenith tilt (°) <span class="val" id="v_theta">1.5</span></label>
+      <input type="range" id="theta" min="-8" max="8" step="0.1" value="1.5">
+      <label>Azimuth (°) <span class="val" id="v_phi">0</span></label>
+      <input type="range" id="phi" min="0" max="360" step="1" value="0">
+      <label>Refractive index at ground n₀ <span class="val" id="v_nGround">1.000292</span></label>
+      <input type="range" id="nGround" min="1.00005" max="1.0005" step="0.00001" value="1.000292">
+      <div class="stat" style="margin-top:4px"><span>Cherenkov angle at ground</span><b id="s_cherAngle">1.30°</b></div>
+      <label>Shower brightness (photons) <span class="val" id="v_dens">3600</span></label>
+      <input type="range" id="dens" min="500" max="12000" step="100" value="3600">
+    </div>
+
+    <div class="group">
+      <h3>🪞 Concave Mirror</h3>
+      <div class="modeRow">
+        <button id="modeAutoBtn" class="active">Auto-tile</button>
+        <button id="modeManualBtn">Manual place</button>
+      </div>
+
+      <div id="autoControls">
+        <label>Aperture shape</label>
+        <select id="mirrorShape">
+          <option value="circle">Circle</option>
+          <option value="square">Square</option>
+          <option value="rectangle">Rectangle</option>
+          <option value="hexagon">Hexagon</option>
+        </select>
+        <label id="lbl_mAspect" style="display:none">Aspect (W/H) <span class="val" id="v_mAspect">1.5</span></label>
+        <input type="range" id="mAspect" min="0.4" max="3" step="0.1" value="1.5" style="display:none">
+      </div>
+
+      <label>Aperture size (m) <span class="val" id="v_mSize">4.0</span></label>
+      <input type="range" id="mSize" min="0.5" max="8" step="0.1" value="1.5">
+      <label>Focal length f (m) <span class="val" id="v_focal">3.0</span></label>
+      <input type="range" id="focal" min="1" max="6" step="0.1" value="1.5">
+      <label>Facet size (m) <span class="val" id="v_facet">0.6</span></label>
+      <input type="range" id="facet" min="0.1" max="1.2" step="0.05" value="0.15">
+
+      <div id="manualControls" style="display:none">
+        <canvas id="editorCanvas" width="280" height="200"></canvas>
+        <div class="editorHint">Click cells to add/remove individual mirror facets.</div>
+        <div class="fillRow">
+          <button class="ghost" id="fillCircle">Fill circle</button>
+          <button class="ghost" id="fillSquare">Fill square</button>
+          <button class="ghost" id="fillHex">Fill hexagon</button>
+          <button class="ghost" id="fillClear">Clear all</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>📷 SiPM Camera</h3>
+      <label>Camera size (m) <span class="val" id="v_cSize">0.5</span></label>
+      <input type="range" id="cSize" min="0.05" max="1.0" step="0.001" value="0.1">
+      <label>Pixel shape</label>
+      <select id="pixShape">
+        <option value="square">Square</option>
+        <option value="hexagon">Hexagon</option>
+        <option value="triangle">Triangle</option>
+      </select>
+      <label>Pixel size (mm) <span class="val" id="v_pSize">15</span></label>
+      <input type="range" id="pSize" min="2" max="40" step="1" value="6">
+    </div>
+
+    <div class="group">
+      <h3>⚡ Simulation</h3>
+      <button id="fireBtn">🔥 Fire Muon</button>
+      <button id="showerBtn" class="secondary">▶ Shower Mode (auto-fire)</button>
+      <button id="clearBtn" class="secondary">Clear Camera</button>
+      <div class="stat"><span>Muons fired</span><b id="s_muons">0</b></div>
+      <div class="stat"><span>Photons emitted</span><b id="s_emit">0</b></div>
+      <div class="stat"><span>Reached mirror</span><b id="s_mirror">0</b></div>
+      <div class="stat"><span>Reached camera</span><b class="hi" id="s_cam">0</b></div>
+      <div class="stat"><span>Predicted ring radius</span><b id="s_predRing">–</b></div>
+      <div class="stat"><span>Measured ring radius</span><b class="warn" id="s_measRing">–</b></div>
+    </div>
+
+  </div>
+
+  <!-- ===================== 3D VIEW ===================== -->
+  <div class="view">
+    <h2>Optics — 3D view <span class="badge" id="badgeFacets">0 facets</span></h2>
+    <canvas id="sideView"></canvas>
+  </div>
+
+  <!-- ===================== CAMERA VIEW ===================== -->
+  <div class="view">
+    <h2>Camera image — SiPM focal plane <span class="badge" id="badgePixels">0 pixels</span></h2>
+    <canvas id="camView"></canvas>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ============================================================
+   IACT MUON CHERENKOV IMAGER — full engine
+   Coordinate convention:
+     z = optical axis, mirror aperture plane at z = 0,
+     camera focal plane at z = +f (toward the sky).
+     Muons travel downward (dz < 0) from high in the atmosphere.
+   Mirror model: Davies–Cotton segmented dish.
+     - Facet centers lie on a sphere of radius f centered at (0,0,f).
+     - Each facet's own normal BISECTS the on-axis incoming direction
+       (0,0,1 reversed) and the facet->focus direction — this is the
+       exact condition (law of reflection) for on-axis parallel light
+       to converge at the common focus (0,0,f), verified numerically.
+     - Each facet is itself a sphere of radius 2f, centered along that
+       bisector normal.
+============================================================ */
+const DEG = Math.PI/180;
+
+const params = {
+  impactX: 0, theta: 1.5, phi: 0, nGround: 1.000292, density: 3600,
+  mirrorMode: 'auto', mirrorShape: 'circle', mSize: 4, mAspect: 1.5,
+  focal: 3, facet: 0.6,
+  cSize: 0.5, pixShape: 'square', pSize: 15
+};
+
+let stats = { muons: 0, emit: 0, mirror: 0, cam: 0 };
+let manualCells = new Set();       // "i,j" keys for manual mirror mode
+let mirrorFacets = new Map();      // "i,j" -> facet object (active facets used for tracing)
+let camera = null;                 // built by buildCamera()
+let lastPhotons = [];              // last-fired photon set (for 3D view rays)
+let lastHits = [];                 // last-fired camera hits
+
+// ---- Canvas handles ----
+const sideCanvas = document.getElementById('sideView');
+const camCanvas  = document.getElementById('camView');
+const editorCanvas = document.getElementById('editorCanvas');
+const cctx = camCanvas.getContext('2d');
+const ectx = editorCanvas.getContext('2d');
+
+// ---- Three.js scene setup ----
+const renderer = new THREE.WebGLRenderer({ canvas: sideCanvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x04060c, 1);
+
+const scene = new THREE.Scene();
+
+const camera3d = new THREE.PerspectiveCamera(40, 1, 0.1, 120);
+camera3d.position.set(8, 5, 10);
+camera3d.lookAt(0, 0, 1.5);
+
+const controls = new OrbitControls(camera3d, renderer.domElement);
+controls.target.set(0, 0, 1.5);
+controls.enableDamping = true;
+controls.dampingFactor = 0.1;
+controls.minDistance = 2;
+controls.maxDistance = 120;
+controls.update();
+
+// Lighting
+const ambientLight = new THREE.AmbientLight(0x303050, 0.6);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+dirLight.position.set(5, 12, 8);
+scene.add(dirLight);
+const dirLight2 = new THREE.DirectionalLight(0x4488ff, 0.4);
+dirLight2.position.set(-4, -2, -6);
+scene.add(dirLight2);
+
+// Grid
+const grid = new THREE.GridHelper(14, 14, 0x2a6f8f, 0x1a3f5f);
+grid.position.y = 0;
+scene.add(grid);
+
+// Coordinate axes helper
+function addAxisArrow(dir, color, len) {
+  const arrow = new THREE.ArrowHelper(
+    new THREE.Vector3(dir[0], dir[1], dir[2]).normalize(),
+    new THREE.Vector3(0, 0, 0), len, color, 0.3, 0.15
+  );
+  scene.add(arrow);
+}
+addAxisArrow([1, 0, 0], 0xff4444, 3.0);
+addAxisArrow([0, 1, 0], 0x44ff44, 3.0);
+addAxisArrow([0, 0, 1], 0x4488ff, 3.0);
+
+// Axis label sprites
+function makeLabel(text, color, pos) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 64, 64);
+  ctx.font = 'bold 48px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.fillText(text, 32, 32);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  const mat = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.position.set(pos[0], pos[1], pos[2]);
+  sprite.scale.set(0.6, 0.6, 1);
+  scene.add(sprite);
+}
+makeLabel('X', '#ff4444', [3.5, 0, 0]);
+makeLabel('Y', '#44ff44', [0, 3.5, 0]);
+makeLabel('Z', '#4488ff', [0, 0, 3.5]);
+
+// Scene objects that get rebuilt each frame
+let sceneObjects = [];
+
+function clearSceneObjects() {
+  for (const obj of sceneObjects) {
+    scene.remove(obj);
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+      if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+      else obj.material.dispose();
+    }
+  }
+  sceneObjects = [];
+}
+
+function addToScene(obj) {
+  scene.add(obj);
+  sceneObjects.push(obj);
+}
+
+function setStat(id, v) { 
+  const el = document.getElementById(id);
+  if (el) el.textContent = v; 
+}
+
+/* ============================================================
+   Section: Muon direction + Cherenkov cone photon generation
+============================================================ */
+function muonDirection(thetaDeg, phiDeg) {
+  const t = thetaDeg*DEG, p = phiDeg*DEG;
+  return [ Math.sin(t)*Math.cos(p), Math.sin(t)*Math.sin(p), -Math.cos(t) ];
+}
+function orthonormalBasis(v) {
+  const helper = Math.abs(v[2]) < 0.9 ? [0,0,1] : [1,0,0];
+  let ux = helper[1]*v[2]-helper[2]*v[1], uy = helper[2]*v[0]-helper[0]*v[2], uz = helper[0]*v[1]-helper[1]*v[0];
+  const un = Math.hypot(ux,uy,uz); ux/=un; uy/=un; uz/=un;
+  const wx = v[1]*uz-v[2]*uy, wy = v[2]*ux-v[0]*uz, wz = v[0]*uy-v[1]*ux;
+  return [[ux,uy,uz],[wx,wy,wz]];
+}
+// Atmospheric scale height (game units, ~8 km real world)
+const SCALE_HEIGHT = 8.0;
+
+// Compute refractive index at height h (game units, z-coordinate)
+function refractiveIndex(h, nGround) {
+  return 1 + (nGround - 1) * Math.exp(-h / SCALE_HEIGHT);
+}
+
+// Compute Cherenkov angle (radians) from refractive index
+function cherenkovAngle(n) {
+  return Math.acos(1 / n);
+}
+
+function generateCherenkovPhotons(p) {
+  const dir = muonDirection(p.theta, p.phi);
+  const [e1,e2] = orthonormalBasis(dir);
+  const zTop = 45.0, nSteps = 300;
+  const cosTheta = Math.cos(p.theta*DEG);
+  const total = Math.min(p.density, 12000);
+  const perStep = Math.max(1, Math.round(total/nSteps));
+  const cosPhi = Math.cos(p.phi*DEG), sinPhi = Math.sin(p.phi*DEG);
+  const noiseFraction = 0.06; // 6% of photons are random noise
+  const photons = [];
+  for (let i=0;i<nSteps;i++){
+    const z = zTop*(i+0.5)/nSteps;
+    const t = z/cosTheta;
+    const ox = p.impactX*cosPhi - t*dir[0];
+    const oy = p.impactX*sinPhi - t*dir[1];
+    const oz = z;
+    // Height-dependent Cherenkov angle
+    const nAtHeight = refractiveIndex(z, p.nGround);
+    const cAng = cherenkovAngle(nAtHeight);
+    const cosC = Math.cos(cAng), sinC = Math.sin(cAng);
+    for (let k=0;k<perStep;k++){
+      const psi = (2*Math.PI*(k+Math.random()*0.6))/perStep;
+      const cp = Math.cos(psi), sp = Math.sin(psi);
+      let dx = cosC*dir[0] + sinC*(cp*e1[0]+sp*e2[0]);
+      let dy = cosC*dir[1] + sinC*(cp*e1[1]+sp*e2[1]);
+      let dz = cosC*dir[2] + sinC*(cp*e1[2]+sp*e2[2]);
+      const n = Math.hypot(dx,dy,dz); dx/=n; dy/=n; dz/=n;
+      photons.push({ox,oy,oz,dx,dy,dz});
+    }
+  }
+  // Add random noise photons (low intensity background)
+  const noiseCount = Math.round(total * noiseFraction);
+  const noiseSpread = params.mSize * 2.5; // spread across the mirror area
+  for (let k=0;k<noiseCount;k++){
+    const nz = Math.random() * zTop * 0.7;
+    const nx = (Math.random() - 0.5) * noiseSpread * 2;
+    const ny = (Math.random() - 0.5) * noiseSpread * 2;
+    // Random direction biased moderately downward
+    const ndx = (Math.random() - 0.5) * 0.4;
+    const ndy = (Math.random() - 0.5) * 0.4;
+    const ndz = -(0.3 + Math.random() * 0.7);
+    const ndn = Math.hypot(ndx, ndy, ndz);
+    photons.push({ox: nx, oy: ny, oz: nz, dx: ndx/ndn, dy: ndy/ndn, dz: ndz/ndn});
+  }
+  return photons;
+}
+function muonTrackPolyline(p) {
+  const dir = muonDirection(p.theta,p.phi);
+  const zTop = 10.0, cosTheta = Math.cos(p.theta*DEG);
+  const tTop = zTop/cosTheta;
+  const cosPhi = Math.cos(p.phi*DEG), sinPhi = Math.sin(p.phi*DEG);
+  const top = [p.impactX*cosPhi - tTop*dir[0], p.impactX*sinPhi - tTop*dir[1], zTop];
+  const tBelow = 1.5/cosTheta;
+  const bot = [p.impactX*cosPhi + tBelow*dir[0], p.impactX*sinPhi + tBelow*dir[1], -1.5];
+  return { top, cross:[p.impactX*cosPhi, p.impactX*sinPhi, 0], bottom: bot };
+}
+
+/* ============================================================
+   Section: Mirror facet grid (shared by auto-tile & manual modes)
+============================================================ */
+function pointInPolygon(x,y,verts){
+  let inside=false;
+  for (let i=0,j=verts.length-1;i<verts.length;j=i++){
+    const xi=verts[i][0], yi=verts[i][1], xj=verts[j][0], yj=verts[j][1];
+    const intersect = ((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi);
+    if (intersect) inside=!inside;
+  }
+  return inside;
+}
+function hexVerts(R){
+  const v=[];
+  for (let k=0;k<6;k++){ const a=DEG*(60*k-90); v.push([R*Math.cos(a), R*Math.sin(a)]); }
+  return v;
+}
+function insideAperture(x,y,p){
+  const hx = p.mSize/2;
+  const hy = p.mirrorShape==='rectangle' ? hx/p.mAspect : hx;
+  switch(p.mirrorShape){
+    case 'circle': return (x*x)/(hx*hx)+(y*y)/(hy*hy) <= 1;
+    case 'square': return Math.abs(x)<=hx && Math.abs(y)<=hx;
+    case 'rectangle': return Math.abs(x)<=hx && Math.abs(y)<=hy;
+    case 'hexagon': return pointInPolygon(x,y,hexVerts(hx));
+    default: return false;
+  }
+}
+// Build one facet's full geometry (position on dish + correct DC tilt + curvature sphere)
+function buildFacet(i,j,size,f){
+  const cx = i*size, cy = j*size;
+  const r2 = cx*cx+cy*cy;
+  const cz = f - Math.sqrt(Math.max(0, f*f - r2));
+  let fx = -cx, fy = -cy, fz = f-cz;
+  const fn = Math.hypot(fx,fy,fz)||1; fx/=fn; fy/=fn; fz/=fn;
+  // normal = bisector of (0,0,1) and facet->focus direction (exact on-axis focus condition)
+  let nx=fx, ny=fy, nz=fz+1;
+  const nn = Math.hypot(nx,ny,nz)||1; nx/=nn; ny/=nn; nz/=nn;
+  const R = 2*f;
+  const sphx = cx+nx*R, sphy = cy+ny*R, sphz = cz+nz*R;
+  return {i,j,cx,cy,cz,nx,ny,nz,sphx,sphy,sphz,R,size};
+}
+function rebuildMirror(){
+  mirrorFacets.clear();
+  const size = params.facet, f = params.focal;
+  if (params.mirrorMode === 'auto'){
+    const half = params.mSize/2 * 1.15;
+    const N = Math.ceil(half/size)+1;
+    for (let i=-N;i<=N;i++) for (let j=-N;j<=N;j++){
+      const cx=i*size, cy=j*size;
+      if (!insideAperture(cx,cy,params)) continue;
+      mirrorFacets.set(i+','+j, buildFacet(i,j,size,f));
+    }
+  } else {
+    for (const key of manualCells){
+      const [i,j] = key.split(',').map(Number);
+      mirrorFacets.set(key, buildFacet(i,j,size,f));
+    }
+  }
+  setStat('badgeFacets', mirrorFacets.size + ' facets');
+}
+
+/* ============================================================
+   Section: Ray tracing
+============================================================ */
+function raySphere(o,d,c,R){
+  const ox=o[0]-c[0], oy=o[1]-c[1], oz=o[2]-c[2];
+  const b = ox*d[0]+oy*d[1]+oz*d[2];
+  const cc = ox*ox+oy*oy+oz*oz - R*R;
+  const disc = b*b-cc;
+  if (disc<0) return null;
+  const s=Math.sqrt(disc), t1=-b-s, t2=-b+s;
+  if (t1>1e-6) return t1;
+  if (t2>1e-6) return t2;
+  return null;
+}
+function reflect(d,n){
+  const dot=d[0]*n[0]+d[1]*n[1]+d[2]*n[2];
+  return [d[0]-2*dot*n[0], d[1]-2*dot*n[1], d[2]-2*dot*n[2]];
+}
+// Trace one photon through the segmented mirror to the camera focal plane.
+function tracePhoton(ph){
+  const f = params.focal, size = params.facet;
+  const o=[ph.ox,ph.oy,ph.oz], d=[ph.dx,ph.dy,ph.dz];
+  if (d[2] >= -1e-9) return null;               // must travel downward to hit mirror
+  const tAp = (0-o[2])/d[2];
+  if (tAp<=0) return null;
+  const ax = o[0]+d[0]*tAp, ay = o[1]+d[1]*tAp; // aperture-plane hit
+  const i = Math.round(ax/size), j = Math.round(ay/size);
+  const facet = mirrorFacets.get(i+','+j);
+  if (!facet) return { mirrorHit:false, ax, ay };
+  if (Math.abs(ax-facet.cx) > size/2 || Math.abs(ay-facet.cy) > size/2)
+    return { mirrorHit:false, ax, ay };
+  const t = raySphere(o,d,[facet.sphx,facet.sphy,facet.sphz],facet.R);
+  if (t===null) return { mirrorHit:false, ax, ay };
+  const hx=o[0]+d[0]*t, hy=o[1]+d[1]*t, hz=o[2]+d[2]*t;
+  let nx=hx-facet.sphx, ny=hy-facet.sphy, nz=hz-facet.sphz;
+  const nn=Math.hypot(nx,ny,nz)||1; nx/=nn; ny/=nn; nz/=nn;
+  const r = reflect(d,[nx,ny,nz]);
+  if (r[2] <= 1e-9) return { mirrorHit:true, ax, ay, camHit:false };
+  const tc = (f-hz)/r[2];
+  if (tc<=0) return { mirrorHit:true, ax, ay, camHit:false };
+  const camX = hx+r[0]*tc, camY = hy+r[1]*tc;
+  return { mirrorHit:true, ax, ay, hx, hy, hz, rdir:r, camHit:true, camX, camY };
+}
+
+/* ============================================================
+   Section: SiPM camera pixel grid + hashed hit accumulation
+============================================================ */
+function squareVerts(s){ const h=s/2; return [[-h,-h],[h,-h],[h,h],[-h,h]]; }
+function hexPixVerts(w){ const R=w/Math.sqrt(3); const v=[]; for(let k=0;k<6;k++){const a=DEG*(60*k-90); v.push([R*Math.cos(a),R*Math.sin(a)]);} return v; }
+function buildCamera(p){
+  const shape = p.pixShape, pitch = p.pSize/1000, extent = p.cSize/2;
+  const MAX_PIX = 6000;
+  const pixels = [];
+  outer:
+  if (shape==='square'){
+    const n = Math.ceil((extent*2)/pitch);
+    for (let i=0;i<n;i++){ for (let j=0;j<n;j++){
+      const cx=(i-(n-1)/2)*pitch, cy=(j-(n-1)/2)*pitch;
+      if (Math.hypot(cx,cy)>extent) continue;
+      pixels.push({cx,cy,counts:0,verts:squareVerts(pitch)});
+      if (pixels.length>MAX_PIX) break outer;
+    }}
+  } else if (shape==='hexagon'){
+    const w=pitch, dx=w, dy=w*Math.sqrt(3)/2;
+    const rows=Math.ceil((extent*2)/dy), cols=Math.ceil((extent*2)/dx);
+    for (let r=-rows;r<=rows;r++){ for (let c=-cols;c<=cols;c++){
+      const cx=c*dx+(r&1?dx/2:0), cy=r*dy;
+      if (Math.hypot(cx,cy)>extent) continue;
+      pixels.push({cx,cy,counts:0,verts:hexPixVerts(w)});
+      if (pixels.length>MAX_PIX) break outer;
+    }}
+  } else if (shape==='triangle'){
+    const s=pitch, h=s*Math.sqrt(3)/2;
+    // Number of lattice cells needed to cover the circular extent
+    const cells = Math.ceil(extent*2/s) + 2;
+    for (let j=-cells; j<=cells; j++) {
+      for (let i=-cells; i<=cells; i++) {
+        // Convert lattice cell (i,j) to world coordinates:
+        // x = (i + j/2) * s,  y = j * h
+        const x0 = (i + j/2)*s, y0 = j*h;
+        const x1 = (i+1 + j/2)*s, y1 = j*h;
+        const x2 = (i + (j+1)/2)*s, y2 = (j+1)*h;
+        const x3 = (i+1 + (j+1)/2)*s, y3 = (j+1)*h;
+
+        // Up triangle: vertices (x0,y0), (x1,y1), (x2,y2)
+        // Centroid is average of the three vertices
+        const uc_x = (x0 + x1 + x2)/3, uc_y = (y0 + y1 + y2)/3;
+        if (Math.hypot(uc_x, uc_y) <= extent) {
+          pixels.push({
+            cx: uc_x, cy: uc_y, counts: 0,
+            verts: [[x0-uc_x, y0-uc_y], [x1-uc_x, y1-uc_y], [x2-uc_x, y2-uc_y]]
+          });
+          if (pixels.length > MAX_PIX) break outer;
+        }
+
+        // Down triangle: vertices (x1,y1), (x3,y3), (x2,y2)
+        const dc_x = (x1 + x3 + x2)/3, dc_y = (y1 + y3 + y2)/3;
+        if (Math.hypot(dc_x, dc_y) <= extent) {
+          pixels.push({
+            cx: dc_x, cy: dc_y, counts: 0,
+            verts: [[x1-dc_x, y1-dc_y], [x3-dc_x, y3-dc_y], [x2-dc_x, y2-dc_y]]
+          });
+          if (pixels.length > MAX_PIX) break outer;
+        }
+      }
+    }
+  }
+  // Spatial hash for O(1) nearest-pixel lookup
+  const bucket = new Map();
+  pixels.forEach((px,idx)=>{
+    const bi=Math.floor(px.cx/pitch), bj=Math.floor(px.cy/pitch);
+    const key=bi+','+bj;
+    if (!bucket.has(key)) bucket.set(key,[]);
+    bucket.get(key).push(idx);
+  });
+  return { pixels, shape, pitch, extent, bucket };
+}
+function accumulateHits(cam, hits){
+  const pitch = cam.pitch;
+  for (const h of hits){
+    const bi=Math.floor(h.camX/pitch), bj=Math.floor(h.camY/pitch);
+    let best=-1, bestD2=Infinity;
+    for (let di=-1;di<=1;di++) for (let dj=-1;dj<=1;dj++){
+      const arr = cam.bucket.get((bi+di)+','+(bj+dj));
+      if (!arr) continue;
+      for (const idx of arr){
+        const px=cam.pixels[idx];
+        const dx=h.camX-px.cx, dy=h.camY-px.cy, dd=dx*dx+dy*dy;
+        if (dd<bestD2){ bestD2=dd; best=idx; }
+      }
+    }
+    if (best>=0 && bestD2 <= pitch*pitch*0.9) cam.pixels[best].counts++;
+  }
+}
+function heatColor(t){
+  t = Math.max(0,Math.min(1,t));
+  let r,g,b;
+  if (t<0.4){ r=t/0.4; g=0; b=0; }
+  else if (t<0.75){ r=1; g=(t-0.4)/0.35; b=0; }
+  else { r=1; g=1; b=(t-0.75)/0.25; }
+  return `rgb(${(r*255)|0},${(g*255)|0},${(b*255)|0})`;
+}
+function fitCanvasToCSS(canvas, ctx){
+  const dpr = window.devicePixelRatio||1;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(1,Math.round(rect.width)), h = Math.max(1,Math.round(rect.height));
+  if (canvas.width !== w*dpr || canvas.height !== h*dpr){
+    canvas.width = w*dpr; canvas.height = h*dpr;
+  }
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {w,h};
+}
+function drawCamera(){
+  const {w,h} = fitCanvasToCSS(camCanvas, cctx);
+  cctx.clearRect(0,0,w,h);
+  cctx.fillStyle = '#000'; cctx.fillRect(0,0,w,h);
+  const margin=14;
+  const scale = (Math.min(w,h)-2*margin)/(camera.extent*2);
+  const ox=w/2, oy=h/2;
+  const toScreen=(x,y)=>[ox+x*scale, oy-y*scale];
+  let maxC=0;
+  for (const px of camera.pixels) if (px.counts>maxC) maxC=px.counts;
+  const norm = maxC>0 ? 1/maxC : 0;
+  for (const px of camera.pixels){
+    const t = px.counts*norm;
+    cctx.fillStyle = px.counts>0 ? heatColor(t) : '#0a0e18';
+    cctx.beginPath();
+    const v0=toScreen(px.cx+px.verts[0][0], px.cy+px.verts[0][1]);
+    cctx.moveTo(v0[0],v0[1]);
+    for (let k=1;k<px.verts.length;k++){
+      const v=toScreen(px.cx+px.verts[k][0], px.cy+px.verts[k][1]);
+      cctx.lineTo(v[0],v[1]);
+    }
+    cctx.closePath(); cctx.fill();
+    cctx.strokeStyle='rgba(255,255,255,0.05)'; cctx.lineWidth=0.5; cctx.stroke();
+  }
+  cctx.strokeStyle='rgba(120,160,255,0.35)'; cctx.lineWidth=1;
+  cctx.beginPath(); cctx.arc(ox,oy,camera.extent*scale,0,2*Math.PI); cctx.stroke();
+
+  // Draw ring center crosshair from the last fired muon
+  if (lastHits.length > 0){
+    let sx = 0, sy = 0, n = 0;
+    for (const hres of lastHits){ if (hres && hres.camHit){ sx += hres.camX; sy += hres.camY; n++; } }
+    if (n > 3){
+      sx /= n; sy /= n;
+      const [cx, cy] = toScreen(sx, sy);
+      const cs = 8;
+      cctx.strokeStyle = '#ffb454';
+      cctx.lineWidth = 2;
+      cctx.beginPath();
+      cctx.moveTo(cx - cs, cy); cctx.lineTo(cx + cs, cy);
+      cctx.moveTo(cx, cy - cs); cctx.lineTo(cx, cy + cs);
+      cctx.stroke();
+      // crosshair circle
+      cctx.strokeStyle = 'rgba(255,180,84,0.3)';
+      cctx.lineWidth = 1;
+      cctx.beginPath(); cctx.arc(cx, cy, 5, 0, 2*Math.PI); cctx.stroke();
+    }
+  }
+
+  setStat('badgePixels', camera.pixels.length + ' pixels');
+}
+
+/* ============================================================
+   Section: 3D scene rendering (replaces the old 2D side view)
+============================================================ */
+function render3DScene() {
+  clearSceneObjects();
+
+  const f = params.focal;
+  const half = params.mSize/2;
+
+  // --- Dish wireframe (two cross-section curves) ---
+  const dishPts1 = [];
+  for (let i=0;i<=60;i++){
+    const x = -half + 2*half*i/60;
+    const z = f - Math.sqrt(Math.max(0, f*f - x*x));
+    dishPts1.push(new THREE.Vector3(x, 0, z));
+  }
+  const dishGeo1 = new THREE.BufferGeometry().setFromPoints(dishPts1);
+  const dishWire1 = new THREE.Line(dishGeo1, new THREE.LineBasicMaterial({ color: 0x2a6f8f, transparent: true, opacity: 0.4 }));
+  addToScene(dishWire1);
+
+  const dishPts2 = [];
+  for (let i=0;i<=60;i++){
+    const y = -half + 2*half*i/60;
+    const z = f - Math.sqrt(Math.max(0, f*f - y*y));
+    dishPts2.push(new THREE.Vector3(0, y, z));
+  }
+  const dishGeo2 = new THREE.BufferGeometry().setFromPoints(dishPts2);
+  const dishWire2 = new THREE.Line(dishGeo2, new THREE.LineBasicMaterial({ color: 0x2a6f8f, transparent: true, opacity: 0.25 }));
+  addToScene(dishWire2);
+
+  // Also add a circular ring at the aperture edge
+  const ringPts = [];
+  const nRing = 40;
+  for (let i=0;i<=nRing;i++){
+    const ang = 2*Math.PI*i/nRing;
+    const rx = half * Math.cos(ang);
+    const ry = half * Math.sin(ang);
+    ringPts.push(new THREE.Vector3(rx, ry, 0));
+  }
+  const ringGeo = new THREE.BufferGeometry().setFromPoints(ringPts);
+  const ringLine = new THREE.Line(ringGeo, new THREE.LineBasicMaterial({ color: 0x4fd7ff, transparent: true, opacity: 0.2 }));
+  addToScene(ringLine);
+
+  // --- Facet points ---
+  const fPos = [];
+  for (const fc of mirrorFacets.values()){
+    fPos.push(fc.cx, fc.cy, fc.cz);
+  }
+  if (fPos.length > 0){
+    const fGeo = new THREE.BufferGeometry();
+    fGeo.setAttribute('position', new THREE.Float32BufferAttribute(fPos, 3));
+    const fMat = new THREE.PointsMaterial({ color: 0x4fd7ff, size: 0.07, sizeAttenuation: true, transparent: true, opacity: 0.85 });
+    const pts = new THREE.Points(fGeo, fMat);
+    addToScene(pts);
+  }
+
+  // --- Camera plane ---
+  const camHalf = params.cSize/2;
+  const camGeo = new THREE.PlaneGeometry(camHalf*2, camHalf*2);
+  const camMesh = new THREE.Mesh(camGeo, new THREE.MeshBasicMaterial({
+    color: 0xffb454, side: THREE.DoubleSide, transparent: true, opacity: 0.25, depthWrite: false
+  }));
+  camMesh.position.set(0, 0, f);
+  addToScene(camMesh);
+  // Camera border
+  const camEdge = new THREE.EdgesGeometry(camGeo);
+  const camLine = new THREE.LineSegments(camEdge, new THREE.LineBasicMaterial({ color: 0xffb454 }));
+  camLine.position.set(0, 0, f);
+  addToScene(camLine);
+
+  // --- Optical axis (dashed) ---
+  const axPts = [new THREE.Vector3(0, 0, -0.5), new THREE.Vector3(0, 0, f * 1.4)];
+  const axGeo = new THREE.BufferGeometry().setFromPoints(axPts);
+  const axMat = new THREE.LineDashedMaterial({ color: 0xffffff, dashSize: 0.08, gapSize: 0.08, transparent: true, opacity: 0.15 });
+  const axLine = new THREE.Line(axGeo, axMat);
+  axLine.computeLineDistances();
+  addToScene(axLine);
+
+  // --- Muon track ---
+  const tp = muonTrackPolyline(params);
+  const muonPts = [
+    new THREE.Vector3(tp.top[0], tp.top[1], tp.top[2]),
+    new THREE.Vector3(tp.bottom[0], tp.bottom[1], tp.bottom[2])
+  ];
+  const muonGeo = new THREE.BufferGeometry().setFromPoints(muonPts);
+  const muonMat = lastPhotons.length > 0
+    ? new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 1 })
+    : new THREE.LineDashedMaterial({ color: 0xffffff, dashSize: 0.15, gapSize: 0.15, transparent: true, opacity: 0.5 });
+  const muonLine = new THREE.Line(muonGeo, muonMat);
+  if (muonMat.isLineDashedMaterial) muonLine.computeLineDistances();
+  addToScene(muonLine);
+
+  // Bright impact point
+  const dotGeo = new THREE.SphereGeometry(0.07, 8, 8);
+  const dotMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const dot = new THREE.Mesh(dotGeo, dotMat);
+  dot.position.set(tp.cross[0], tp.cross[1], tp.cross[2]);
+  addToScene(dot);
+
+  // --- Cherenkov rays (sampled, green) ---
+  if (lastPhotons.length > 0){
+    const cherPos = [];
+    const step = Math.max(1, Math.floor(lastPhotons.length / 200));
+    for (let i=0;i<lastPhotons.length;i+=step){
+      const ph = lastPhotons[i];
+      if (ph.dz >= 0) continue;
+      const t = (0 - ph.oz) / ph.dz;
+      if (t <= 0) continue;
+      cherPos.push(ph.ox, ph.oy, ph.oz);
+      cherPos.push(ph.ox + ph.dx * t, ph.oy + ph.dy * t, 0);
+    }
+    if (cherPos.length > 0){
+      const cherGeo = new THREE.BufferGeometry();
+      cherGeo.setAttribute('position', new THREE.Float32BufferAttribute(cherPos, 3));
+      const cherMat = new THREE.LineBasicMaterial({ color: 0x8cdcb4, transparent: true, opacity: 0.12 });
+      const cherLine = new THREE.LineSegments(cherGeo, cherMat);
+      addToScene(cherLine);
+    }
+  }
+
+  // --- Reflected rays (sampled, orange) ---
+  if (lastHits.length > 0){
+    const refPos = [];
+    let shown = 0;
+    const maxShown = 150;
+    const step2 = Math.max(1, Math.floor(lastHits.length / maxShown));
+    for (let i=0;i<lastHits.length && shown<maxShown;i+=step2){
+      const hres = lastHits[i];
+      if (!hres || !hres.camHit) continue;
+      refPos.push(hres.ax, hres.ay, 0);
+      refPos.push(hres.camX, hres.camY, f);
+      shown++;
+    }
+    if (refPos.length > 0){
+      const refGeo = new THREE.BufferGeometry();
+      refGeo.setAttribute('position', new THREE.Float32BufferAttribute(refPos, 3));
+      const refMat = new THREE.LineBasicMaterial({ color: 0xffb454, transparent: true, opacity: 0.15 });
+      const refLine = new THREE.LineSegments(refGeo, refMat);
+      addToScene(refLine);
+    }
+  }
+}
+
+/* ============================================================
+   Section: Manual facet editor canvas
+============================================================ */
+function drawEditor(){
+  const {w,h} = fitCanvasToCSS(editorCanvas, ectx);
+  ectx.clearRect(0,0,w,h);
+  ectx.fillStyle='#04060c'; ectx.fillRect(0,0,w,h);
+  const size = params.facet;
+  const half = params.mSize/2*1.1;
+  const scale = Math.min(w,h)/(half*2);
+  const ox=w/2, oy=h/2;
+  const N = Math.ceil(half/size);
+  for (let i=-N;i<=N;i++) for (let j=-N;j<=N;j++){
+    const cx=i*size, cy=j*size;
+    if (Math.hypot(cx,cy) > half) continue;
+    const sx = ox+cx*scale, sy = oy-cy*scale;
+    const s = size*scale;
+    const active = manualCells.has(i+','+j);
+    ectx.fillStyle = active ? 'rgba(79,215,255,0.55)' : 'rgba(255,255,255,0.04)';
+    ectx.fillRect(sx-s/2+1, sy-s/2+1, s-2, s-2);
+  }
+  ectx.strokeStyle='rgba(120,160,255,0.25)'; ectx.lineWidth=1;
+  ectx.beginPath(); ectx.arc(ox,oy,Math.min(w,h)/2-2,0,2*Math.PI); ectx.stroke();
+}
+editorCanvas.addEventListener('click', (e)=>{
+  const rect = editorCanvas.getBoundingClientRect();
+  const w=rect.width, h=rect.height;
+  const size = params.facet, half = params.mSize/2*1.1;
+  const scale = Math.min(w,h)/(half*2);
+  const ox=w/2, oy=h/2;
+  const px = e.clientX-rect.left, py = e.clientY-rect.top;
+  const cx = (px-ox)/scale, cy = -(py-oy)/scale;
+  const i = Math.round(cx/size), j = Math.round(cy/size);
+  const key = i+','+j;
+  if (manualCells.has(key)) manualCells.delete(key); else manualCells.add(key);
+  rebuildMirror(); drawEditor(); render3DScene();
+});
+function fillManual(shapeOverride){
+  manualCells.clear();
+  const size = params.facet, half = params.mSize/2;
+  const N = Math.ceil(half/size)+1;
+  const fakeP = Object.assign({}, params, {mirrorShape: shapeOverride});
+  for (let i=-N;i<=N;i++) for (let j=-N;j<=N;j++){
+    const cx=i*size, cy=j*size;
+    if (insideAperture(cx,cy,fakeP)) manualCells.add(i+','+j);
+  }
+  rebuildMirror(); drawEditor(); render3DScene();
+}
+document.getElementById('fillCircle').addEventListener('click', ()=>fillManual('circle'));
+document.getElementById('fillSquare').addEventListener('click', ()=>fillManual('square'));
+document.getElementById('fillHex').addEventListener('click', ()=>fillManual('hexagon'));
+document.getElementById('fillClear').addEventListener('click', ()=>{
+  manualCells.clear(); rebuildMirror(); drawEditor(); render3DScene();
+});
+
+/* ============================================================
+   Section: Fire / clear / stats / geometry rebuild pipeline
+============================================================ */
+function onGeometryChange(){
+  rebuildMirror();
+  camera = buildCamera(params);
+  resize3D();
+  drawCamera();
+  if (params.mirrorMode==='manual') drawEditor();
+}
+function clearCamera(){
+  if (!camera) return;
+  for (const px of camera.pixels) px.counts = 0;
+  lastPhotons = []; lastHits = [];
+  stats = { muons:0, emit:0, mirror:0, cam:0 };
+  refreshStats();
+  drawCamera(); render3DScene();
+}
+function refreshStats(){
+  setStat('s_muons', stats.muons);
+  setStat('s_emit', stats.emit);
+  setStat('s_mirror', stats.mirror);
+  setStat('s_cam', stats.cam);
+  const groundCherAngle = cherenkovAngle(params.nGround);
+  const predicted = params.focal*Math.tan(groundCherAngle);
+  setStat('s_predRing', (predicted*1000).toFixed(1)+' mm');
+  setStat('s_cherAngle', (groundCherAngle/DEG).toFixed(2)+'°');
+  if (lastHits.length){
+    let sx=0, sy=0, n=0;
+    for (const hres of lastHits){ if (hres && hres.camHit){ sx+=hres.camX; sy+=hres.camY; n++; } }
+    if (n>3){
+      sx/=n; sy/=n;
+      let rms=0;
+      for (const hres of lastHits){ if (hres && hres.camHit){
+        const dx=hres.camX-sx, dy=hres.camY-sy; rms += Math.hypot(dx,dy);
+      }}
+      rms/=n;
+      setStat('s_measRing', (rms*1000).toFixed(1)+' mm');
+    } else setStat('s_measRing', '–');
+  } else setStat('s_measRing', '–');
+}
+function fireMuon(){
+  const photons = generateCherenkovPhotons(params);
+  const hits = [];
+  const results = new Array(photons.length);
+  let mirrorCount = 0, camCount = 0;
+  for (let k=0;k<photons.length;k++){
+    const r = tracePhoton(photons[k]);
+    results[k] = r;
+    if (r && r.mirrorHit) mirrorCount++;
+    if (r && r.camHit){ camCount++; hits.push({camX:r.camX, camY:r.camY}); }
+  }
+  accumulateHits(camera, hits);
+  stats.muons++; stats.emit += photons.length; stats.mirror += mirrorCount; stats.cam += camCount;
+  lastPhotons = photons; lastHits = results;
+  refreshStats();
+  drawCamera(); render3DScene();
+}
+
+/* ============================================================
+   Section: Control wiring
+============================================================ */
+const bind = (id, key, fmt = v=>v, onChange=onGeometryChange) => {
+  const el = document.getElementById(id);
+  const label = document.getElementById('v_'+id);
+  const update = () => {
+    const raw = el.type==='range' ? parseFloat(el.value) : el.value;
+    params[key] = raw;
+    if (label) label.textContent = fmt(raw);
+    onChange();
+  };
+  el.addEventListener('input', update);
+  update();
+};
+
+bind('impactX','impactX', v=>v.toFixed(1), ()=>render3DScene());
+bind('theta','theta', v=>v.toFixed(1), ()=>render3DScene());
+bind('phi','phi', v=>v.toFixed(0), ()=>render3DScene());
+bind('nGround','nGround', v=>v.toFixed(6), ()=>{ refreshStats(); render3DScene(); });
+bind('dens','density', v=>v.toFixed(0), ()=>{});
+
+document.getElementById('mirrorShape').addEventListener('change', (e)=>{
+  params.mirrorShape = e.target.value;
+  document.getElementById('lbl_mAspect').style.display = params.mirrorShape==='rectangle' ? 'block':'none';
+  document.getElementById('mAspect').style.display = params.mirrorShape==='rectangle' ? 'block':'none';
+  onGeometryChange();
+});
+bind('mAspect','mAspect', v=>v.toFixed(1));
+bind('mSize','mSize', v=>v.toFixed(1));
+bind('focal','focal', v=>v.toFixed(1));
+bind('facet','facet', v=>v.toFixed(2));
+bind('cSize','cSize', v=>v.toFixed(2));
+document.getElementById('pixShape').addEventListener('change', (e)=>{ params.pixShape=e.target.value; onGeometryChange(); });
+bind('pSize','pSize', v=>v.toFixed(0));
+
+document.getElementById('modeAutoBtn').addEventListener('click', ()=>{
+  params.mirrorMode='auto';
+  document.getElementById('modeAutoBtn').classList.add('active');
+  document.getElementById('modeManualBtn').classList.remove('active');
+  document.getElementById('autoControls').style.display='block';
+  document.getElementById('manualControls').style.display='none';
+  onGeometryChange();
+});
+document.getElementById('modeManualBtn').addEventListener('click', ()=>{
+  params.mirrorMode='manual';
+  document.getElementById('modeManualBtn').classList.add('active');
+  document.getElementById('modeAutoBtn').classList.remove('active');
+  document.getElementById('autoControls').style.display='none';
+  document.getElementById('manualControls').style.display='block';
+  if (manualCells.size===0) fillManual('circle'); else { onGeometryChange(); drawEditor(); }
+});
+
+document.getElementById('fireBtn').addEventListener('click', fireMuon);
+document.getElementById('clearBtn').addEventListener('click', clearCamera);
+
+let showerRunning = false, showerHandle = null, lastFire = 0;
+const SHOWER_INTERVAL = 220;
+function showerLoop(now){
+  if (!showerRunning) return;
+  if (now-lastFire >= SHOWER_INTERVAL){
+    // small random jitter per muon so a shower builds a realistic calibration pattern
+    params.impactX = (Math.random()-0.5)*params.mSize*1.4;
+    document.getElementById('impactX').value = params.impactX;
+    document.getElementById('v_impactX').textContent = params.impactX.toFixed(1);
+    params.theta = 0.5 + Math.random()*3;
+    document.getElementById('theta').value = params.theta;
+    document.getElementById('v_theta').textContent = params.theta.toFixed(1);
+    params.phi = Math.random()*360;
+    document.getElementById('phi').value = params.phi;
+    document.getElementById('v_phi').textContent = params.phi.toFixed(0);
+    fireMuon();
+    lastFire = now;
+  }
+  showerHandle = requestAnimationFrame(showerLoop);
+}
+function toggleShower(){
+  showerRunning = !showerRunning;
+  const btn = document.getElementById('showerBtn');
+  if (showerRunning){
+    btn.textContent = '⏸ Stop Shower Mode';
+    lastFire = 0;
+    showerHandle = requestAnimationFrame(showerLoop);
+  } else {
+    btn.textContent = '▶ Shower Mode (auto-fire)';
+    if (showerHandle) cancelAnimationFrame(showerHandle);
+  }
+}
+document.getElementById('showerBtn').addEventListener('click', toggleShower);
+
+window.addEventListener('keydown', (e)=>{
+  if (e.target.tagName==='INPUT' || e.target.tagName==='SELECT') return;
+  if (e.code==='Space'){ e.preventDefault(); fireMuon(); }
+  else if (e.key==='c'){ clearCamera(); }
+  else if (e.key==='s'){ toggleShower(); }
+});
+window.addEventListener('resize', ()=>{ resize3D(); drawCamera(); if (params.mirrorMode==='manual') drawEditor(); });
+
+// ---- Resize / animation ----
+function resize3D() {
+  const rect = sideCanvas.getBoundingClientRect();
+  const w = Math.max(1, Math.round(rect.width));
+  const h = Math.max(1, Math.round(rect.height));
+  renderer.setSize(w, h, false);
+  camera3d.aspect = w / h;
+  camera3d.updateProjectionMatrix();
+  render3DScene();
+}
+
+function initSize() {
+  const rect = sideCanvas.getBoundingClientRect();
+  const w = Math.max(1, Math.round(rect.width));
+  const h = Math.max(1, Math.round(rect.height));
+  renderer.setSize(w, h, false);
+  camera3d.aspect = w / h;
+  camera3d.updateProjectionMatrix();
+}
+initSize();
+onGeometryChange();
+refreshStats();
+
+// Continuous animation loop for orbit damping
+function animate() {
+  controls.update();
+  renderer.render(scene, camera3d);
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+</body>
+</html>
