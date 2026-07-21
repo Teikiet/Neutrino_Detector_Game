@@ -1,0 +1,2200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NeutrinoLab 2D</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; overflow:hidden; background:#001018; font-family:sans-serif; color:#cfe; }
+
+  /* ---- Layout: sidebar (left) + canvas (right) ---- */
+  #app { display:flex; width:100vw; height:100vh; }
+  #sidebar {
+    width:320px; min-width:320px; height:100vh; overflow-y:auto;
+    background:#00131d; border-right:1px solid #2a6a8a;
+    padding:12px; z-index:10;
+  }
+  #stage { position:relative; flex:1; height:100vh; }
+  #stage canvas { display:block; }
+
+  h3 { margin:14px 0 6px; font-size:13px; color:#0af; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid #113a4a; padding-bottom:3px; }
+  h3:first-child { margin-top:0; }
+
+  button { background:#0a3; color:#fff; border:none; padding:7px 10px; margin:0 4px 4px 0; cursor:pointer; border-radius:4px; font-size:13px; }
+  button:hover { background:#0c5; }
+  button:disabled { background:#456; cursor:not-allowed; }
+  button.active { background:#0af; }
+
+  .btnRow { display:flex; flex-wrap:wrap; }
+
+  /* Medium + buy-type selectors */
+  .selRow button { flex:1; }
+  #buyPMT.active      { background:#0a8; }
+  #buySiPM.active     { background:#a60; }
+
+  /* Guess panel inline in sidebar */
+  #guessPanel { margin-top:8px; padding:10px; border-radius:6px; background:rgba(0,30,45,0.6); display:none; }
+  .step { opacity:0.4; transition:opacity 0.2s; }
+  .step.active { opacity:1; }
+  #energyPanel { margin-top:10px; padding-top:10px; border-top:1px solid #2a6a8a; display:none; }
+  #directionPanel { margin-top:10px; padding-top:10px; border-top:1px solid #2a6a8a; display:none; }
+  #eSlider { width:100%; }
+  #eReadout { font-size:14px; font-weight:bold; color:#ff5; }
+  #eTruth { font-size:13px; color:#0f8; margin-top:4px; }
+  #dirTruth { font-size:13px; color:#0f8; margin-top:4px; }
+
+  /* Direction dial */
+  #dialWrap { display:flex; align-items:center; gap:10px; margin:8px 0; }
+  #dial { width:110px; height:110px; border-radius:50%; background:#012; border:2px solid #2a6a8a; position:relative; cursor:grab; flex:0 0 auto; }
+  #dial.grabbing { cursor:grabbing; }
+  #dialArrow { position:absolute; left:50%; top:50%; width:4px; height:45px; background:#ff5; transform-origin:bottom center; transform:translate(-50%,-100%) rotate(0deg); border-radius:2px; pointer-events:none; }
+  #dialHub { position:absolute; left:50%; top:50%; width:10px; height:10px; background:#ff5; border-radius:50%; transform:translate(-50%,-50%); pointer-events:none; }
+  #dialReadout { font-size:13px; font-weight:bold; }
+
+  /* HUD blocks */
+  #moneyBox { font-size:15px; margin:4px 0; }
+  #moneyNum { font-size:22px; font-weight:bold; color:#6f6; }
+  #moneyNum.bankrupt { color:#f66; }
+  #signalNum { font-size:20px; font-weight:bold; color:#ff5; }
+  #timeOuter { position:relative; width:100%; height:6px; background:#012; border:1px solid #2a6a8a; border-radius:3px; overflow:hidden; margin-top:3px; }
+  #timeInner { height:100%; width:0%; background:#0cf; }
+
+  #scoreboard { font-size:14px; margin:4px 0 8px; color:#cfe; }
+  #count { color:#ff5; }
+
+  #info { font-size:12px; line-height:1.4; color:#bcd; margin-top:10px; padding-top:8px; border-top:1px solid #113a4a; }
+
+  .legendMini { font-size:11px; color:#8ab; margin-top:6px; }
+  .sw { display:inline-block; width:11px; height:11px; border-radius:2px; margin-left:4px; vertical-align:middle;}
+
+  /* Canvas-overlay elements (scoped to stage) */
+  #selectBox { position:absolute; border:1px dashed #0af; background:rgba(0,170,255,0.15); pointer-events:none; display:none; z-index:20; }
+  #flashMsg { position:absolute; top:14px; left:50%; transform:translateX(-50%); background:rgba(0,20,30,0.85); padding:8px 16px; border-radius:5px; font-size:14px; color:#ff8; display:none; z-index:25; pointer-events:none; }
+
+  /* Context menu (fixed position, body-level) */
+  #ctxMenu { position:fixed; background:#012; border:1px solid #2a6a8a; border-radius:6px; padding:4px; z-index:200; display:none; box-shadow:0 4px 12px rgba(0,0,0,0.5); min-width:170px; }
+  #ctxMenu button { display:block; width:100%; text-align:left; background:transparent; color:#cfe; margin:0; border-radius:3px; padding:8px 10px; }
+  #ctxMenu button:hover { background:#0a3a4a; }
+  #ctxMenu button:disabled { color:#567; cursor:not-allowed; background:transparent; }
+  #ctxMenu hr { border:none; border-top:1px solid #2a6a8a; margin:4px 0; }
+
+  /* Top-left comment overlay on canvas */
+  #commentOverlay {
+    position:absolute; top:12px; left:12px; z-index:15; pointer-events:none;
+    background:rgba(0,20,30,0.82); padding:8px 14px; border-radius:6px;
+    font-size:13px; color:#d8e8f0; max-width:380px; line-height:1.5;
+    border:1px solid rgba(42,106,138,0.4); display:none;
+  }
+  canvas.select-mode { cursor: crosshair; }
+
+  /* Results modal */
+  #resultsModal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); display:none; z-index:100; overflow-y:auto; }
+  #resultsContent { background:#001a2a; margin:40px auto; padding:30px; border:1px solid #2a6a8a; border-radius:8px; max-width:900px; color:#cfe; }
+  #resultsContent h1 { color:#0f8; margin-top:0; }
+  #resultsContent h2 { color:#0af; margin-top:20px; }
+  #energyChartWrap { position:relative; width:100%; height:350px; background:#012; border:1px solid #2a6a8a; border-radius:4px; margin:15px 0; }
+  #flavorChart { display:flex; gap:30px; margin:20px 0; justify-content:center; flex-wrap:wrap; }
+  .flavorBox { text-align:center; background:rgba(0,50,80,0.5); padding:20px; border-radius:6px; border:1px solid #2a6a8a; min-width:180px; }
+  .flavorBox .label { font-size:14px; color:#8ab; }
+  .flavorBox .statRow { font-size:13px; margin:6px 0; }
+  .flavorBox .statRow.green { color:#0f8; }
+  .flavorBox .statRow.red { color:#f66; }
+  .closeBtn { background:#a50; padding:10px 20px; cursor:pointer; border-radius:4px; border:none; color:#fff; float:right; margin-bottom:20px; }
+  .closeBtn:hover { background:#c70; }
+  #flavorRatio { display:flex; gap:40px; justify-content:center; flex-wrap:wrap; margin:15px 0 25px; }
+  .ratioBlock { text-align:center; }
+  .ratioBlock .ratioLabel { font-size:13px; color:#8ab; margin-bottom:6px; }
+  .ratioBlock .ratioValue { font-size:22px; font-weight:bold; }
+  .ratioBlock .ratioValue.you { color:#f66; }
+  .ratioBlock .ratioValue.actual { color:#0f8; }
+  .ratioNote { text-align:center; font-size:12px; color:#8ab; max-width:600px; margin:0 auto; }
+  #bonusMsg { font-size:14px; color:#ff5; text-align:center; margin:10px 0; }
+  #gameOverPanel { display:none; margin-top:10px; padding:10px; border-radius:6px; background:rgba(0,80,40,0.3); border:1px solid #0a8; text-align:center; }
+  #gameOverPanel button { flex:1; }
+  #roundResults { margin-top:8px; font-size:13px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- ============ LEFT SIDEBAR ============ -->
+  <div id="sidebar">
+    <h3>Detector Medium</h3>
+    <div class="btnRow">
+      <select id="mediumSelect" style="width:100%;padding:7px;background:#012;color:#cfe;border:1px solid #2a6a8a;border-radius:4px;font-size:13px;">
+        <option value="ice">🧊 Ice (n=1.31)</option>
+        <option value="water">💧 Water (n=1.33)</option>
+        <option value="honey">🍯 Honey (n=1.49)</option>
+        <option value="beer">🍺 Beer (n=1.35)</option>
+        <option value="air">🌬️ Air (n≈1.00)</option>
+        <option value="oliveOil">🫒 Olive Oil (n=1.47)</option>
+        <option value="glass">🔍 Glass (n=1.52)</option>
+        <option value="diamond">💎 Diamond (n=2.42)</option>
+        <option value="syrup">🍁 Maple Syrup (n=1.47)</option>
+        <option value="milk">🥛 Milk (n=1.35)</option>
+        <option value="vodka">🍸 Vodka (n=1.36)</option>
+      </select>
+    </div>
+
+    <h3>Build</h3>
+    <div class="btnRow selRow">
+      <button id="buyPMT" class="active">PMT $500</button>
+      <button id="buySiPM">SiPM $2000</button>
+    </div>
+    <div class="btnRow">
+      <button id="modePlace" class="active">Mode: Place</button>
+      <button id="snapToggle">Snap: Off</button>
+    </div>
+    <div class="btnRow">
+      <button id="grid">Auto Grid</button>
+      <button id="clear">Clear (100% refund)</button>
+    </div>
+
+    <h3>Play</h3>
+    <div class="btnRow">
+      <button id="fire">Fire Neutrino</button>
+      <button id="replay" disabled>▶ Replay Timing</button>
+    </div>
+    <div class="btnRow">
+      <button id="roundsInput">Rounds: 10</button>
+      <button id="reset">Reset Game</button>
+      <button id="viewResults" disabled>View Results</button>
+    </div>
+
+    <h3>Status</h3>
+    <div id="moneyBox">Cash: $<span id="moneyNum">10000</span></div>
+    <div id="scoreboard">Round 0 / 10 &nbsp;|&nbsp; Score: 0%</div>
+    <div>Sensors: <span id="count">0</span> &nbsp; <span id="detectorTypeInfo" style="font-size:11px;color:#8ab;"></span></div>
+    <div style="margin-top:6px;">Total detected signal:</div>
+    <div><span id="signalNum">0</span> <span style="font-size:12px;color:#8ab;">p.e.</span></div>
+    <div style="margin-top:6px;font-size:12px;">Event time:</div>
+    <div id="timeOuter"><div id="timeInner"></div></div>
+    <div id="selInfo" style="font-size:12px;color:#0af;margin-top:6px;display:none;"></div>
+
+    <!-- Guess panel in sidebar -->
+    <div id="guessPanel">
+      <div class="step active" id="stepFlavor">
+        <div><b>Step 1:</b> Which interaction?</div>
+        <div style="font-size:11px;color:#8ab;margin:4px 0;">Watch the <i>order</i> sensors light up. Higher energy → longer tracks & wider double-bangs.</div>
+        <button data-guess="cascade">Cascade (νₑ / NC)</button>
+        <button data-guess="track">Track (ν_μ CC)</button>
+        <button data-guess="double">Double-bang (ν_τ CC)</button>
+      </div>
+
+      <div class="step" id="energyPanel">
+        <div><b>Step 2:</b> Estimate the energy</div>
+        <div style="font-size:11px;color:#8ab;margin:4px 0;">Use total signal & event size. Scale is logarithmic.</div>
+        <input type="range" id="eSlider" min="0" max="3000" value="1500">
+        <div>Guess: <span id="eReadout">31.6 GeV</span></div>
+        <button id="eSubmit">Submit Energy</button>
+        <div id="eTruth"></div>
+      </div>
+
+      <div class="step" id="directionPanel">
+        <div><b>Step 3:</b> Point the arrow along the track</div>
+        <div style="font-size:11px;color:#8ab;margin:4px 0;">Drag the dial to aim. A preview arrow shows on the event.</div>
+        <div id="dialWrap">
+          <div id="dial">
+            <div id="dialArrow"></div>
+            <div id="dialHub"></div>
+          </div>
+          <div>
+            <div id="dialReadout">0°</div>
+            <button id="dirSubmit" style="margin-top:8px;">Submit Direction</button>
+          </div>
+        </div>
+        <div id="dirTruth"></div>
+      </div>
+    </div>
+
+    <div id="info">
+      Pick a medium, buy PMT/SiPM sensors, place them, then <b>Fire</b>.
+      Color/size = signal strength; opacity = hit timing (bright early → faint late).
+      <br><b>Select mode:</b> drag to box-select, drag to move, right-click for Copy/Move/Delete.
+    </div>
+
+    <div class="legendMini">
+      Strength (turbo): weak
+      <span class="sw" style="background:#30123b"></span>
+      <span class="sw" style="background:#4169e1"></span>
+      <span class="sw" style="background:#00ff7f"></span>
+      <span class="sw" style="background:#ffff00"></span>
+      <span class="sw" style="background:#ff0000"></span> strong
+    </div>
+
+    <!-- Game over panel (shown after round 10) -->
+    <div id="gameOverPanel">
+      <div style="font-size:15px;font-weight:bold;color:#ff5;">All rounds complete!</div>
+      <div id="bonusMsg"></div>
+      <div style="margin-top:8px;">
+        <button id="continueGame">Continue Building</button>
+        <button id="endGame">End Game</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ RIGHT: CANVAS STAGE ============ -->
+  <div id="stage">
+    <div id="selectBox"></div>
+    <div id="flashMsg"></div>
+    <div id="commentOverlay"></div>
+  </div>
+</div>
+
+<!-- Context menu -->
+<div id="ctxMenu">
+  <button id="ctxCopy">📋 Copy Formation</button>
+  <button id="ctxMove">✥ Move Selection</button>
+  <hr>
+  <button id="ctxDelete">🗑 Delete</button>
+</div>
+
+<!-- Results modal -->
+<div id="resultsModal">
+  <div id="resultsContent">
+    <button class="closeBtn" onclick="closeResults()">✕ Close</button>
+    <h1>🎯 Game Results</h1>
+    <h2>Final Score: <span id="finalScore">0</span>%</h2>
+    <div id="roundResults"></div>
+    <h2>Energy Spectrum Comparison</h2>
+    <div id="energyChartWrap"><canvas id="energyChart"></canvas></div>
+    <h2>Neutrino Flavor Detection</h2>
+    <div id="flavorChart"></div>
+    <h2>Flavor Ratio: Your Reconstruction vs Actual</h2>
+    <div id="flavorRatio"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<script>
+// ========================================================================
+//  NEUTRINOLAB 2D — Full rewrite with photon transport, Cherenkov,
+//  detector types, economy, direction guessing, medium selection.
+// ========================================================================
+
+// ---------- Three.js scene setup ----------
+const scene = new THREE.Scene();
+const viewSize = 100;
+const GRID_SPACING = 8;
+let aspect = window.innerWidth / window.innerHeight;
+
+const camera = new THREE.OrthographicCamera(
+  -viewSize*aspect/2, viewSize*aspect/2, viewSize/2, -viewSize/2, 0.1, 1000);
+camera.position.z = 10;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x001018);
+
+const stage = document.getElementById('stage');
+stage.appendChild(renderer.domElement);
+
+// ---------- Background reference grid ----------
+function buildBackgroundGrid(spacing, extent){
+  const positions = [];
+  for (let v = -extent; v <= extent; v += spacing){
+    positions.push(-extent, v, -5,  extent, v, -5);
+    positions.push(v, -extent, -5,  v, extent, -5);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  const mat = new THREE.LineBasicMaterial({ color:0x134a5e, transparent:true, opacity:0.5 });
+  const lines = new THREE.LineSegments(geo, mat);
+  scene.add(lines);
+
+  const axisGeo = new THREE.BufferGeometry();
+  axisGeo.setAttribute('position', new THREE.Float32BufferAttribute([
+    -extent, 0, -4.9,  extent, 0, -4.9,
+    0, -extent, -4.9,  0, extent, -4.9
+  ], 3));
+  const axisMat = new THREE.LineBasicMaterial({ color:0x2a7a9a, transparent:true, opacity:0.8 });
+  scene.add(new THREE.LineSegments(axisGeo, axisMat));
+}
+buildBackgroundGrid(GRID_SPACING, 300);
+
+// ---------- Constants ----------
+// Flavor ratio: set percentages for νₑ (cascade) and ν_μ (track).
+// ν_τ (double-bang) gets the remainder: 100 - FLAVOR_PCT_E - FLAVOR_PCT_MU
+const FLAVOR_PCT_E  = 33.33333;   // electron neutrino → cascade
+const FLAVOR_PCT_MU = 33.33333;   // muon neutrino → track
+// tau neutrino → double-bang: inferred automatically
+
+const E_MIN = 10, E_MAX = 1000;
+const LOG_MIN = Math.log10(E_MIN);
+const LOG_MAX = Math.log10(E_MAX);
+let TOTAL_ROUNDS = 10;
+const ENERGY_TOLERANCE = 1.0;
+const ANIM_DURATION = 1000;
+const FLASH_TIME = 250;
+const DARK_COLOR = 0x222831;
+const MIN_OPACITY = 0.1;
+const MAX_OPACITY = 1.0;
+const MIN_SIZE = 0.1;
+const MAX_SIZE = 2.5;
+const PLAY_HALF = 48;
+const SELECT_HIT_RADIUS = 2.8;
+const C_TIME = 1/3e8;
+const MUON_DELAY = 1.0;  // muon traverses the full track over 100% of normalised time
+const DOUBLEBANG_DELAY = 0.5;  // tau double-bang: gap between first and second cascade on [0,1] bar
+
+// ---------- Media (photon transport properties) ----------
+function makeMedium({ name, n, lambdaAbs, lambdaSca, color }) {
+  return {
+    name,
+    n,
+    lambdaAbs,
+    lambdaSca,
+    thetaC_deg: Math.acos(1 / n) * 180 / Math.PI,
+    thetaC_rad: Math.acos(1 / n),
+    color
+  };
+}
+
+const MEDIA = {
+  ice: makeMedium({
+    name: 'Ice',
+    n: 1.31,
+    lambdaAbs: 90,
+    lambdaSca: 45,
+    color: 0x4aa3ff
+  }),
+
+  water: makeMedium({
+    name: 'Water',
+    n: 1.333,
+    lambdaAbs: 55,
+    lambdaSca: 80,
+    color: 0x1e7ad0
+  }),
+
+  honey: makeMedium({
+    name: 'Honey',
+    n: 1.49,
+    lambdaAbs: 8,
+    lambdaSca: 12,
+    color: 0xffb000
+  }),
+
+  beer: makeMedium({
+    name: 'Beer',
+    n: 1.345,
+    lambdaAbs: 25,
+    lambdaSca: 35,
+    color: 0xd18a00
+  }),
+
+  air: makeMedium({
+    name: 'Air',
+    n: 1.000293,
+    lambdaAbs: 100000,
+    lambdaSca: 100000,
+    color: 0xddeeff
+  }),
+
+  oliveOil: makeMedium({
+    name: 'Olive Oil',
+    n: 1.47,
+    lambdaAbs: 15,
+    lambdaSca: 25,
+    color: 0xb5a642
+  }),
+
+  glass: makeMedium({
+    name: 'Glass',
+    n: 1.52,
+    lambdaAbs: 100,
+    lambdaSca: 100,
+    color: 0x99eeff
+  }),
+
+  diamond: makeMedium({
+    name: 'Diamond',
+    n: 2.42,
+    lambdaAbs: 300,
+    lambdaSca: 200,
+    color: 0xffffff
+  }),
+
+  syrup: makeMedium({
+    name: 'Maple Syrup',
+    n: 1.47,
+    lambdaAbs: 6,
+    lambdaSca: 10,
+    color: 0x9b4f00
+  }),
+
+  milk: makeMedium({
+    name: 'Milk',
+    n: 1.35,
+    lambdaAbs: 4,
+    lambdaSca: 3,
+    color: 0xfff7dd
+  }),
+
+  vodka: makeMedium({
+    name: 'Vodka',
+    n: 1.36,
+    lambdaAbs: 80,
+    lambdaSca: 100,
+    color: 0xddeeff
+  })
+};
+let currentMedium = 'ice';
+function medium(){ return MEDIA[currentMedium]; }
+
+// ---------- Detector types ----------
+const DET = {
+  PMT:  {
+    name:'PMT', cost:500, qe:0.55, noise:0.01, timeJitter:0.10, ringColor:0x00ddaa
+  },
+  SiPM: {
+    name:'SiPM', cost:2000, qe:0.75, noise:0.02, timeJitter:0.02, ringColor:0xffaa00
+  }
+};
+let buyType = 'PMT';
+
+// ---------- Economy ----------
+const START_CASH = 20000;
+const REFUND_FRACTION = 1.0;
+const REWARD_PER_ROUND = 1000;
+const FLAVOR_BONUS = 10000;
+
+let money = START_CASH;
+let bankrupt = false;
+let bonusAwarded = false;
+let gameOver = false;
+
+// ---------- State ----------
+let mode = 'place';
+let sensors = [];
+let eventObjects = [];
+let currentTruth = null;
+let round = 0;
+let totalScore = 0;
+let awaitingGuess = false;
+let guessStage = null;
+let flavorCorrect = false;
+let currentGuessType = null;
+let animating = false;
+let animStart = 0;
+let hasEvent = false;
+let maxTimeEvent = 0;
+let animDoneCallback = null;
+let animStuckTimer = null;
+
+// ---------- Direction state ----------
+let dirGuessDeg = 0;
+let dirTruthDeg = null;
+let dirGuesses = [];
+
+// ---------- History for results ----------
+let energyGuesses = [];
+let energyTruths = [];
+let flavorCounts = { cascade: 0, track: 0, double: 0 };
+let flavorGuesses = { cascade: 0, track: 0, double: 0 };
+let userFlavorTally = { cascade: 0, track: 0, double: 0 };
+
+// ---------- Selection / editing state ----------
+let selectedSet = new Set();
+let clipboardFormation = null;
+let pendingPaste = false;
+let pendingMove = false;
+let snapEnabled = false;
+let dragMode = null;
+let dragStartWorld = { x:0, y:0 };
+let dragStartScreen = { x:0, y:0 };
+let dragMoved = false;
+let dragSnapshot = null;
+
+// ---------- DOM references ----------
+const countEl = document.getElementById('count');
+const scoreEl = document.getElementById('scoreboard');
+const guessPanel = document.getElementById('guessPanel');
+const stepFlavor = document.getElementById('stepFlavor');
+const energyPanel = document.getElementById('energyPanel');
+const directionPanel = document.getElementById('directionPanel');
+const signalNum = document.getElementById('signalNum');
+const eSlider = document.getElementById('eSlider');
+const eReadout = document.getElementById('eReadout');
+const eTruth = document.getElementById('eTruth');
+const infoEl = document.getElementById('info');
+const commentOverlay = document.getElementById('commentOverlay');
+function setComment(text){
+  commentOverlay.innerHTML = text;
+  commentOverlay.style.display = 'block';
+}
+function hideComment(){
+  commentOverlay.style.display = 'none';
+}
+const timeInner = document.getElementById('timeInner');
+const replayBtn = document.getElementById('replay');
+const roundsBtn = document.getElementById('roundsInput');
+const viewResultsBtn = document.getElementById('viewResults');
+const snapBtn = document.getElementById('snapToggle');
+const selectBoxEl = document.getElementById('selectBox');
+const ctxMenuEl = document.getElementById('ctxMenu');
+const selInfoEl = document.getElementById('selInfo');
+const modeBtn = document.getElementById('modePlace');
+const canvasEl = renderer.domElement;
+
+// Direction arrow (yellow, player guess) and true direction arrow (green, shown after guess)
+let dirArrowMesh = null;
+let trueDirArrowMesh = null;
+function buildDirArrowMesh(){
+  if (dirArrowMesh) scene.remove(dirArrowMesh);
+  // Arrow: a line + cone head
+  const group = new THREE.Group();
+  
+  // Shaft
+  const shaftGeo = new THREE.BufferGeometry();
+  const shaftMat = new THREE.LineBasicMaterial({ color: 0xffff00, linewidth: 2 });
+  shaftGeo.setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(30,0,0)]);
+  const shaft = new THREE.Line(shaftGeo, shaftMat);
+  group.add(shaft);
+  
+  // Arrow head (cone)
+  const coneGeo = new THREE.ConeGeometry(2, 6, 8);
+  const coneMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+  const cone = new THREE.Mesh(coneGeo, coneMat);
+  cone.position.set(30, 0, 0);
+  cone.rotation.z = -Math.PI / 2;  // point along +x
+  group.add(cone);
+  
+  group.visible = false;
+  scene.add(group);
+  dirArrowMesh = group;
+
+  // True direction arrow (green)
+  const trueGroup = new THREE.Group();
+  const trueShaftGeo = new THREE.BufferGeometry();
+  const trueShaftMat = new THREE.LineBasicMaterial({ color: 0x00ff88, linewidth: 2 });
+  trueShaftGeo.setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(30,0,0)]);
+  const trueShaft = new THREE.Line(trueShaftGeo, trueShaftMat);
+  trueGroup.add(trueShaft);
+  const trueConeGeo = new THREE.ConeGeometry(2, 6, 8);
+  const trueConeMat = new THREE.MeshBasicMaterial({ color: 0x00ff88 });
+  const trueCone = new THREE.Mesh(trueConeGeo, trueConeMat);
+  trueCone.position.set(30, 0, 0);
+  trueCone.rotation.z = -Math.PI / 2;
+  trueGroup.add(trueCone);
+  trueGroup.visible = false;
+  scene.add(trueGroup);
+  trueDirArrowMesh = trueGroup;
+}
+buildDirArrowMesh();
+const dial = document.getElementById('dial');
+const dialArrow = document.getElementById('dialArrow');
+const dialReadout = document.getElementById('dialReadout');
+const dirTruth = document.getElementById('dirTruth');
+const gameOverPanel = document.getElementById('gameOverPanel');
+const bonusMsg = document.getElementById('bonusMsg');
+const roundResults = document.getElementById('roundResults');
+const moneyNum = document.getElementById('moneyNum');
+const detectorTypeInfo = document.getElementById('detectorTypeInfo');
+
+// ========================================================================
+//  Turbo colormap
+// ========================================================================
+const TURBO = [
+  [0.188, 0.071, 0.235],
+  [0.294, 0.051, 0.510],
+  [0.417, 0.075, 0.855],
+  [0.255, 0.560, 1.000],
+  [0.118, 0.867, 1.000],
+  [0.000, 1.000, 0.745],
+  [0.118, 1.000, 0.498],
+  [0.529, 1.000, 0.000],
+  [1.000, 1.000, 0.000],
+  [1.000, 0.533, 0.000],
+  [1.000, 0.000, 0.000]
+];
+
+function signalColor(t){
+  t = Math.max(0, Math.min(1, t));
+  const n = TURBO.length - 1;
+  const scaled = t * n;
+  const i = Math.min(n - 1, Math.floor(scaled));
+  const f = scaled - i;
+  const a = TURBO[i], b = TURBO[i+1];
+  const c = new THREE.Color();
+  c.setRGB(a[0] + (b[0]-a[0])*f, a[1] + (b[1]-a[1])*f, a[2] + (b[2]-a[2])*f);
+  return c;
+}
+
+// ========================================================================
+//  Economy helpers
+// ========================================================================
+function updateMoneyHUD(){
+  moneyNum.textContent = Math.round(money);
+  moneyNum.classList.toggle('bankrupt', money <= 0);
+}
+
+function canEdit(){
+  if (awaitingGuess){ flash("Finish your guess before editing the array."); return false; }
+  if (animating){ flash("Wait for the timing replay to finish."); return false; }
+  if (gameOver && !hasEvent){ flash("Game is over. Reset or continue."); return false; }
+  return true;
+}
+
+function canAfford(type, count){
+  count = count || 1;
+  return money >= DET[type].cost * count;
+}
+
+function sensorRefund(type){
+  return DET[type].cost * REFUND_FRACTION;
+}
+
+// ========================================================================
+//  Sensors
+// ========================================================================
+function addSensor(x, y, type, opts){
+  if (!type) type = buyType;
+  const charge = opts && opts.charge === false ? false : true;
+  const d = DET[type];
+
+  if (charge){
+    if (!canEdit()) return -1;
+    if (!canAfford(type)){ flash(`Not enough cash for a ${type} ($${d.cost}).`); return -1; }
+    money -= d.cost;
+    updateMoneyHUD();
+  }
+
+  const geo = new THREE.CircleGeometry(1.0, 16);
+  const mat = new THREE.MeshBasicMaterial({ color: DARK_COLOR, transparent: true, opacity: 1.0 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, y, 1);
+
+  // Selection ring
+  const ringGeo = new THREE.RingGeometry(1.35, 1.75, 20);
+  const ringMat = new THREE.MeshBasicMaterial({ color: d.ringColor, transparent: true, opacity: 0.95, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.set(0, 0, 0.1);
+  ring.visible = false;
+  mesh.add(ring);
+
+  // Type badge (inner ring)
+  const badgeGeo = new THREE.RingGeometry(1.0, 1.25, 20);
+  const badgeMat = new THREE.MeshBasicMaterial({ color: d.ringColor, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+  const badge = new THREE.Mesh(badgeGeo, badgeMat);
+  badge.position.set(0, 0, 0.05);
+  mesh.add(badge);
+
+  scene.add(mesh);
+  sensors.push({ mesh, x, y, signal:0, hitTime:1, ring, badge, type });
+  countEl.textContent = sensors.length;
+  updateDetectorTypeInfo();
+  return sensors.length - 1;
+}
+
+function updateDetectorTypeInfo(){
+  const counts = { PMT:0, SiPM:0 };
+  sensors.forEach(s => { counts[s.type]++; });
+  detectorTypeInfo.textContent = `(PMT:${counts.PMT} SiPM:${counts.SiPM})`;
+}
+
+function removeSensorAt(idx){
+  const s = sensors[idx];
+  scene.remove(s.mesh);
+  sensors.splice(idx, 1);
+  // cleanup selectedSet
+  const newSet = new Set();
+  selectedSet.forEach(i => {
+    if (i < idx) newSet.add(i);
+    else if (i > idx) newSet.add(i - 1);
+  });
+  selectedSet = newSet;
+  countEl.textContent = sensors.length;
+  updateDetectorTypeInfo();
+}
+
+function setSensorDark(s){
+  s.mesh.material.color.setHex(DARK_COLOR);
+  s.mesh.material.opacity = 1.0;
+  s.mesh.scale.set(1, 1, 1);
+}
+
+function resetSensorSignals(){
+  sensors.forEach(s => { s.signal = 0; s.hitTime = 1; setSensorDark(s); });
+}
+
+function totalSignal(){
+  return sensors.reduce((a,s)=>a+s.signal, 0);
+}
+
+// ========================================================================
+//  Photon transport: depositTimed with absorption, scattering, Cherenkov
+// ========================================================================
+function depositTimed(px, py, strength, timeAtVertex, sensorTimes, isTrack, trackDir, trackAngleDeg){
+  // isTrack: boolean, if true apply Cherenkov cone boost/suppress
+  // trackDir: {x,y} unit vector (particle direction)
+  // trackAngleDeg: direction angle in degrees (0=+x)
+  const M = medium();
+
+  sensors.forEach((s, idx) => {
+    const d = DET[s.type];
+    const dx = s.x - px, dy = s.y - py;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < 0.01) return;  // skip degenerate
+
+    // --- Cherenkov cone weighting ---
+    let cherWeight = 1.0;
+    if (isTrack && trackDir){
+      // angle from track direction to this sensor (relative to emission point)
+      const toSensorAngle = Math.atan2(dy, dx);
+      const diffRad = toSensorAngle - trackAngleDeg * Math.PI / 180;
+      // normalize to [-pi, pi]
+      const diff = Math.atan2(Math.sin(diffRad), Math.cos(diffRad));
+      const diffDeg = Math.abs(diff * 180 / Math.PI);
+      const thetaC = M.thetaC_deg;
+      // Gaussian-like boost around ±θ_C with width ~12°
+      const sigma = 12;
+      const dTheta = Math.min(Math.abs(diffDeg - thetaC), Math.abs(diffDeg - (360 - thetaC)));
+      const gauss = Math.exp(-dTheta * dTheta / (2 * sigma * sigma));
+      // On-cone: up to 3× boost; far off-cone: suppressed to 0.3×
+      cherWeight = 0.3 + 2.7 * gauss;
+    }
+
+    // --- Absorption (exponential) ---
+    const absorb = Math.exp(-dist / M.lambdaAbs);
+
+    // --- Geometric spread ---
+    const geom = 1 / (1 + dist*dist / 120);
+
+    // --- Light collected (with QE) ---
+    const collected = strength * absorb * geom * cherWeight * d.qe;
+    s.signal += collected;
+
+    // --- Arrival time ---
+    const baseTime = timeAtVertex + dist * M.n * C_TIME;
+
+    // --- Scattering delay ---
+    const scatterFactor = dist / M.lambdaSca;
+    const scatterDelay = scatterFactor * 0.02 * (0.5 + Math.random());
+
+    // --- Detector jitter ---
+    const jitter = (Math.random() - 0.5) * d.timeJitter ;
+
+    const arrival = baseTime + scatterDelay ;
+    if (arrival < sensorTimes[idx]) sensorTimes[idx] = arrival;
+  });
+}
+
+// ========================================================================
+//  Noise injection
+// ========================================================================
+function injectNoise(sensorTimes){
+  sensors.forEach((s, idx) => {
+    const d = DET[s.type];
+    if (Math.random() < d.noise){
+      const fakeStrength = 0.5 + Math.random() * 1.5;
+      s.signal += fakeStrength;
+      const fakeTime = Math.random();
+      if (fakeTime < sensorTimes[idx]) sensorTimes[idx] = fakeTime;
+    }
+  });
+}
+
+// ========================================================================
+//  Timing normalization & animation
+// ========================================================================
+function normalizeTimes(sensorTimes){
+  let tmin = Infinity, tmax = -Infinity;
+  sensors.forEach((s, i) => {
+    if (s.signal > 0.05){
+      if (sensorTimes[i] < tmin) tmin = sensorTimes[i];
+      if (sensorTimes[i] > tmax) tmax = sensorTimes[i];
+    }
+  });
+  const span = (tmax - tmin) || 1;
+  maxTimeEvent = span;
+  sensors.forEach((s, i) => {
+    s.hitTime = (s.signal > 0.05) ? (sensorTimes[i] - tmin)/span : 2;
+  });
+}
+
+function applySensorLook(s, maxSig){
+  const t = (Math.log10(Math.max(s.signal, 1)) - Math.log10(1)) /
+            (Math.log10(Math.max(maxSig, 1)) - Math.log10(1));
+  const boostedT = Math.max(0, Math.min(1, t));
+  const base = signalColor(boostedT);
+
+  const sizeT = signalToT(s.signal, maxSig);
+  const size = MIN_SIZE + sizeT * (MAX_SIZE - MIN_SIZE);
+
+  s.mesh.material.color.copy(base);
+  s.mesh.material.opacity = MAX_OPACITY + s.hitTime * (MIN_OPACITY - MAX_OPACITY);
+  s.mesh.scale.set(size, size, 1);
+}
+
+function signalToT(sig, maxSig){
+  if (sig <= 0 || maxSig <= 0) return 0;
+  const DECADES = 2.5;
+  const logMax = Math.log10(maxSig);
+  const logMin = logMax - DECADES;
+  const t = (Math.log10(sig) - logMin) / (logMax - logMin);
+  return Math.max(0, Math.min(1, t));
+}
+
+let flashTimer = null;
+function flash(msg){
+  const prev = infoEl.innerHTML;
+  infoEl.innerHTML = `<span style="color:#ff8">${msg}</span>`;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(()=>{ if(!awaitingGuess) infoEl.innerHTML = prev; }, 1800);
+}
+
+// ========================================================================
+//  Event visuals: blobs, tracks, Cherenkov cones
+// ========================================================================
+function clearEventObjects(){
+  eventObjects.forEach(o => scene.remove(o));
+  eventObjects = [];
+  if (dirArrowMesh) dirArrowMesh.visible = false;
+  if (trueDirArrowMesh) trueDirArrowMesh.visible = false;
+}
+
+function clearConeVisuals(){
+  // Cones and track lines are in eventObjects; just clear them.
+  clearEventObjects();
+}
+
+function makeBlob(x, y, r){
+  const geo = new THREE.CircleGeometry(r, 24);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent:true, opacity:0.5 });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, 0.5);
+  m.visible = false;
+  m.userData.type = 'blob';
+  scene.add(m);
+  eventObjects.push(m);
+}
+
+function makeMicroBlob(x, y, r){
+  const geo = new THREE.CircleGeometry(r, 16);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x88ccff, transparent:true, opacity:0.35 });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, 0.52);
+  m.visible = false;
+  m.userData.type = 'blob';
+  scene.add(m);
+  eventObjects.push(m);
+}
+
+function makeTrack(x1, y1, x2, y2){
+  const g = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(x1, y1, 0.5), new THREE.Vector3(x2, y2, 0.5)]);
+  const mat = new THREE.LineBasicMaterial({ color: 0xffffff });
+  const line = new THREE.Line(g, mat);
+  line.visible = false;
+  line.userData.type = 'track';
+  scene.add(line);
+  eventObjects.push(line);
+}
+
+/**
+ * Cherenkov cone — the muon (at track END) leads a coherent wavefront.
+ * At every point along its path the muon emitted Cherenkov light at angle θ_C.
+ * The superposition forms a filled triangle opening backward from the muon.
+ * 
+ * Visual: filled triangle (cone interior) + two envelope lines at ±θ_C
+ *         + wavefront arcs (cross-lines) spanning the cone at regular intervals.
+ */
+function makeCherenkovConeLines(px, py, angleDeg, trackLen){
+  const M = medium();
+  const thetaC = M.thetaC_deg;
+  
+  const trackAngleRad = angleDeg * Math.PI / 180;
+  // Muon position = end of track
+  const tx = px + Math.cos(trackAngleRad) * trackLen;
+  const ty = py + Math.sin(trackAngleRad) * trackLen;
+  
+  const revAngleDeg = (angleDeg + 180) % 360;  // backward along the track
+  const revRad = revAngleDeg * Math.PI / 180;
+  
+  const len = trackLen * 0.95;
+  
+  // Envelope endpoints (cone opens backward from muon at ±θ_C)
+  const a1 = (revAngleDeg + thetaC) * Math.PI / 180;
+  const a2 = (revAngleDeg - thetaC) * Math.PI / 180;
+  const ex1 = tx + Math.cos(a1) * len;
+  const ey1 = ty + Math.sin(a1) * len;
+  const ex2 = tx + Math.cos(a2) * len;
+  const ey2 = ty + Math.sin(a2) * len;
+  
+  // 1. Filled triangle — the cone interior (semi-transparent)
+  const triGeo = new THREE.BufferGeometry();
+  const verts = new Float32Array([
+    tx, ty, 0.4,
+    ex1, ey1, 0.4,
+    ex2, ey2, 0.4
+  ]);
+  triGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+  triGeo.computeVertexNormals();
+  const triMat = new THREE.MeshBasicMaterial({ 
+    color: 0x44aaff, transparent: true, opacity: 0.10, side: THREE.DoubleSide 
+  });
+  const triMesh = new THREE.Mesh(triGeo, triMat);
+  triMesh.visible = false;
+  triMesh.userData.type = 'cone';
+  scene.add(triMesh);
+  eventObjects.push(triMesh);
+  
+  // 2. Envelope lines (the outer boundaries of the cone)
+  [a1, a2].forEach(a => {
+    const g = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(tx, ty, 0.5),
+      new THREE.Vector3(tx + Math.cos(a) * len, ty + Math.sin(a) * len, 0.5)
+    ]);
+    const mat = new THREE.LineBasicMaterial({ 
+      color: 0x44aaff, transparent: true, opacity: 0.45 
+    });
+    const line = new THREE.Line(g, mat);
+    line.visible = false;
+    line.userData.type = 'cone';
+    scene.add(line);
+    eventObjects.push(line);
+  });
+  
+  // 3. Wavefront arcs — cross-lines showing expanding wavefronts
+  const nArcs = 10;
+  for (let i = 1; i <= nArcs; i++){
+    const t = i / (nArcs + 1);
+    const r = t * len;
+    const cx = tx + Math.cos(revRad) * r;
+    const cy = ty + Math.sin(revRad) * r;
+    // Half-width of the cone at this distance along the axis
+    const halfW = r * Math.tan(thetaC * Math.PI / 180);
+    const perpRad = revRad + Math.PI / 2;
+    const ax = cx + Math.cos(perpRad) * halfW;
+    const ay = cy + Math.sin(perpRad) * halfW;
+    const bx = cx - Math.cos(perpRad) * halfW;
+    const by = cy - Math.sin(perpRad) * halfW;
+    
+    const g = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(ax, ay, 0.45),
+      new THREE.Vector3(bx, by, 0.45)
+    ]);
+    const mat = new THREE.LineBasicMaterial({ 
+      color: 0x44aaff, transparent: true, opacity: 0.18 
+    });
+    const arc = new THREE.Line(g, mat);
+    arc.visible = false;
+    arc.userData.type = 'cone';
+    scene.add(arc);
+    eventObjects.push(arc);
+  }
+}
+
+// Reveal only blobs (after flavor guess)
+function revealLocation(){
+  eventObjects.forEach(o => {
+    if (o.userData.type === 'blob') o.visible = true;
+  });
+}
+// Reveal tracks and cones (after direction guess)
+function revealDirection(){
+  eventObjects.forEach(o => {
+    if (o.userData.type === 'track' || o.userData.type === 'cone') o.visible = true;
+  });
+  // Show the direction arrow
+  if (dirArrowMesh) dirArrowMesh.visible = true;
+}
+
+// ========================================================================
+//  Direction dial
+// ========================================================================
+function updateDial(){
+  dialArrow.style.transform = `translate(-50%, -100%) rotate(${dirGuessDeg}deg)`;
+  dialReadout.textContent = Math.round(dirGuessDeg) + '°';
+  // Update canvas arrow
+  updateDirCanvasArrow();
+}
+
+function updateDirCanvasArrow(){
+  if (!hasEvent || !currentTruth || !dirArrowMesh) return;
+  const canvasAngleDeg = ((-dirGuessDeg + 90) % 360 + 360) % 360;
+  const angleRad = canvasAngleDeg * Math.PI / 180;
+  dirArrowMesh.position.set(0, 0, 0.5);
+  dirArrowMesh.rotation.z = angleRad;
+  dirArrowMesh.visible = true;
+}
+
+let dialGrabbing = false;
+dial.addEventListener('mousedown', ()=>{ dialGrabbing = true; dial.classList.add('grabbing'); });
+window.addEventListener('mouseup', ()=>{
+  dialGrabbing = false;
+  dial.classList.remove('grabbing');
+});
+window.addEventListener('mousemove', (e)=>{
+  if (!dialGrabbing) return;
+  const rect = dial.getBoundingClientRect();
+  const cx = rect.left + rect.width/2;
+  const cy = rect.top + rect.height/2;
+  const angle = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI;
+  dirGuessDeg = (angle + 90) % 360;  // 0° = up
+  if (dirGuessDeg < 0) dirGuessDeg += 360;
+  updateDial();
+});
+
+// ========================================================================
+//  Energy sampling & helpers
+// ========================================================================
+function sampleEnergy(){
+  const u = Math.random();
+  return Math.pow(10, LOG_MIN + u * (LOG_MAX - LOG_MIN));
+}
+
+function energyNorm(energy){
+  return (Math.log10(energy) - LOG_MIN) / (LOG_MAX - LOG_MIN);
+}
+
+function sliderToEnergy(v){
+  const frac = v / 3000;
+  return Math.pow(10, LOG_MIN + frac * (LOG_MAX - LOG_MIN));
+}
+
+function updateEReadout(){
+  const e = sliderToEnergy(parseFloat(eSlider.value));
+  eReadout.textContent = e.toFixed(e < 10 ? 1 : 0) + ' GeV';
+}
+
+// ========================================================================
+//  Fire neutrino — the main event
+// ========================================================================
+function fireNeutrino(){
+  // Force-reset any lingering animation state BEFORE any guard checks
+  animating = false;
+  animDoneCallback = null;
+  if (animStuckTimer) { clearTimeout(animStuckTimer); animStuckTimer = null; }
+  timeInner.style.width = '0%';
+
+  if (!canEdit()){ flash("Can't fire during a guess or animation."); return; }
+  if (sensors.length === 0){ flash("Place some sensors first."); return; }
+  if (gameOver){ flash("Game over. Reset or continue."); return; }
+  if (bankrupt){ flash("Bankrupt! Reset the game."); return; }
+
+  hasEvent = false;
+
+  gameOverPanel.style.display = 'none';
+  clearConeVisuals();
+  resetSensorSignals();
+  const sensorTimes = sensors.map(() => 1);
+
+  // Random vertex
+  const vx = (Math.random() - 0.5) * 60;
+  const vy = (Math.random() - 0.5) * 60;
+
+  // Sample flavor using configured ratios
+  const r = Math.random() * 100;
+  let type;
+  if (r < FLAVOR_PCT_E) {
+    type = 'cascade';
+  } else if (r < FLAVOR_PCT_E + FLAVOR_PCT_MU) {
+    type = 'track';
+  } else {
+    type = 'double';
+  }
+  const energy = sampleEnergy();
+
+  // Track direction (random)
+  const trackAngleDeg = Math.random() * 360;
+  const trackAngleRad = trackAngleDeg * Math.PI / 180;
+  const trackDir = { x: Math.cos(trackAngleRad), y: Math.sin(trackAngleRad) };
+
+  // True direction (0° = right, CCW)
+  dirTruthDeg = trackAngleDeg;
+  dirGuessDeg = 0;
+  updateDial();
+
+  // Store truth
+  currentTruth = { type, energy, vx, vy, dirTruthDeg };
+
+  // Track length ∝ energy (muon decay length scales with energy)
+  const trackLength = Math.min(energy / 0.1, 2000);
+  const tx = vx + trackDir.x * trackLength;
+  const ty = vy + trackDir.y * trackLength;
+
+  // Visuals: track line, blobs (double bang)
+  if (type === 'cascade'){
+    makeBlob(vx, vy, Math.min(8 + energy/40, 25));
+  } else if (type === 'track'){
+    makeTrack(vx, vy, tx, ty);
+    makeCherenkovConeLines(vx, vy, trackAngleDeg, trackLength);
+    // Visual micro-blobs: small circles along the track showing the micro-cascades
+    const visualSegs = Math.max(1, Math.ceil(trackLength / 3));
+    for (let i = 0; i <= visualSegs; i++){
+      const t = i / visualSegs;
+      const bx = vx + trackDir.x * trackLength * t;
+      const by = vy + trackDir.y * trackLength * t;
+      makeMicroBlob(bx, by, Math.min(0.8, 0.3 + energy / (visualSegs * 10)));
+    }
+  } else if (type === 'double'){
+    // Two cascades (blobs) connected by a track
+    // Separation distance = energy-dependent (higher energy → wider separation)
+    const doubleSep = Math.min(energy / 15, 60);
+    const ax = vx;
+    const ay = vy;
+    const bx = vx + trackDir.x * doubleSep;
+    const by = vy + trackDir.y * doubleSep;
+
+    makeBlob(ax, ay, Math.min(5 + energy/50, 18));
+    makeBlob(bx, by, Math.min(5 + energy/50, 18));
+    makeTrack(ax, ay, bx, by);
+    makeCherenkovConeLines(ax, ay, trackAngleDeg, doubleSep);
+  }
+
+  // --- Photon emission ---
+  const M = medium();
+
+  // Track: muon travels at speed c, emitting light at each step.
+  // Since c > c/n, the superposition of many small isotropic cascades
+  // naturally creates the Cherenkov wavefront / Mach cone.
+  if (type === 'track'){
+    // Dense segments: one micro-cascade every ~1 world unit
+    const segments = Math.max(1, Math.ceil(trackLength / 1));
+    const segmentEnergy = energy / segments;
+    for (let i = 0; i <= segments; i++){
+      const t = i / segments;
+      const px = vx + trackDir.x * trackLength * t;
+      const py = vy + trackDir.y * trackLength * t;
+      // Muon reaches this point at speed c (v = c)
+      const timeAtSegment = t * MUON_DELAY;
+      // Each micro-cascade emits isotropic light
+      emitMicroCascade(px, py, timeAtSegment, segmentEnergy, sensorTimes, true);
+    }
+  }
+
+  // Helper: micro-cascade - a single isotropic light burst from a point
+  // (used for each step along the muon track; the superposition of many
+  //  such expanding spheres naturally creates the Cherenkov Mach cone)
+  function emitMicroCascade(cx, cy, startTime, e, times, isTrack){
+    // Emit several isotropic rays from this point
+    const nRays = 12;
+    const maxR = Math.max(0.5, e / 8);
+    for (let k = 0; k < nRays; k++){
+      const angle = (k / nRays) * 2 * Math.PI;
+      // Place deposit at a small random radius from center
+      const r = Math.random() * maxR;
+      const px2 = cx + r * Math.cos(angle);
+      const py2 = cy + r * Math.sin(angle);
+      const rayStrength = 10 * (e / 5) / nRays;
+      depositTimed(px2, py2, rayStrength, startTime, times, isTrack, trackDir, trackAngleDeg);
+    }
+  }
+
+  // Helper: emit isotropic light from concentric shells (cascade shower)
+  function emitCascadeShells(cx, cy, startTime, e){
+    const showerRadius = Math.min(e / 8, 60);
+    const shellSegments = Math.max(4, Math.ceil(showerRadius / 3));
+    for (let i = 0; i <= shellSegments; i++){
+      const t = i / shellSegments;
+      const r = t * showerRadius;
+      const timeAtShell = startTime + t * showerRadius * C_TIME / medium().n;
+      const shellPoints = Math.max(1, Math.ceil(4 + r / 8));
+      for (let j = 0; j < shellPoints; j++){
+        const angle = (j / shellPoints) * 2 * Math.PI;
+        const px2 = cx + r * Math.cos(angle);
+        const py2 = cy + r * Math.sin(angle);
+        const segmentStrength = (e / 5) / (shellSegments * shellPoints);
+        depositTimed(px2, py2, segmentStrength, timeAtShell, sensorTimes, false, null, 0);
+      }
+    }
+  }
+
+  if (type === 'cascade'){
+    emitCascadeShells(vx, vy, 0, energy);
+  } else if (type === 'double'){
+    // Double-bang: two cascades with energy-proportional time lag
+    const doubleSep = Math.min(energy / 15, 60);
+    const timeLag = DOUBLEBANG_DELAY;
+    const cascadeEnergy = energy / 2;  // Split energy between both bangs
+    emitCascadeShells(vx, vy, 0, cascadeEnergy);
+    emitCascadeShells(vx + trackDir.x * doubleSep, vy + trackDir.y * doubleSep, timeLag, cascadeEnergy);
+  }
+
+  // Noise
+  injectNoise(sensorTimes);
+  normalizeTimes(sensorTimes);
+
+  hasEvent = true;
+  const tot = totalSignal();
+  signalNum.textContent = (tot > 100 ? Math.round(tot) : tot.toFixed(1)) + ' PE';
+
+  // Auto-trigger replay
+  startAnimation(() => {
+    awaitingGuess = true;
+    guessStage = 'flavor';
+    flavorCorrect = false;
+    guessPanel.style.display = 'block';
+    stepFlavor.classList.add('active');
+    energyPanel.style.display = 'none';
+    energyPanel.classList.remove('active');
+    directionPanel.style.display = 'none';
+    directionPanel.classList.remove('active');
+    eTruth.textContent = '';
+    dirTruth.textContent = '';
+    hideComment();
+    setComment("<b>Step 1:</b> From the pattern and <i>opacity</i> (bright circles early → faint circles late), guess the interaction type. ▶ Replay to re-watch.");
+  });
+}
+
+// ========================================================================
+//  Timing animation — with stuck-detection safety net
+// ========================================================================
+function startAnimation(cb){
+  // Guard against concurrent animations
+  if (animating) {
+    animating = false;
+    if (animDoneCallback) { const old = animDoneCallback; animDoneCallback = null; old(); }
+    if (animStuckTimer) { clearTimeout(animStuckTimer); animStuckTimer = null; }
+  }
+  
+  animating = true;
+  animDoneCallback = cb || null;
+  animStart = performance.now();
+  replayBtn.disabled = true;
+  sensors.forEach(s => setSensorDark(s));
+
+  // Stuck-detection timeout: if animation hasn't finished in 12s, force-finish
+  if (animStuckTimer) clearTimeout(animStuckTimer);
+  animStuckTimer = setTimeout(() => {
+    if (animating) {
+      animating = false;
+      timeInner.style.width = '100%';
+      replayBtn.disabled = false;
+      let maxSig = 0;
+      sensors.forEach(s => { if (s.signal > maxSig) maxSig = s.signal; });
+      if (maxSig <= 0) maxSig = 1;
+      sensors.forEach(s => {
+        if (s.hitTime > 1) { setSensorDark(s); return; }
+        applySensorLook(s, maxSig);
+      });
+      if (animDoneCallback) { const cb2 = animDoneCallback; animDoneCallback = null; cb2(); }
+    }
+  }, 12000);
+}
+
+function updateAnimation(now){
+  if (!animating) return;
+  const elapsed = now - animStart;
+  const prog = Math.min(1, elapsed / ANIM_DURATION);
+  timeInner.style.width = (prog * 100) + '%';
+
+  let maxSig = 0;
+  sensors.forEach(s => { if (s.signal > maxSig) maxSig = s.signal; });
+  if (maxSig <= 0) maxSig = 1;
+
+  sensors.forEach(s => {
+    if (s.hitTime > 1) return;
+    if (prog >= s.hitTime){
+      applySensorLook(s, maxSig);
+      const sinceHit = (prog - s.hitTime) * ANIM_DURATION;
+      if (sinceHit < FLASH_TIME){
+        const k = 1 - sinceHit / FLASH_TIME;
+        const c = s.mesh.material.color.clone().lerp(new THREE.Color(0xffffff), 0.7 * k);
+        s.mesh.material.color.copy(c);
+        s.mesh.material.opacity = Math.min(1.0, s.mesh.material.opacity + 0.3 * k);
+        const flashScale = s.mesh.scale.x + 0.3 * k;
+        s.mesh.scale.set(flashScale, flashScale, 1);
+      }
+    } else {
+      setSensorDark(s);
+    }
+  });
+
+  if (prog >= 1){
+    animating = false;
+    if (animStuckTimer) { clearTimeout(animStuckTimer); animStuckTimer = null; }
+    replayBtn.disabled = false;
+    sensors.forEach(s => {
+      if (s.hitTime > 1) { setSensorDark(s); return; }
+      applySensorLook(s, maxSig);
+    });
+    if (animDoneCallback){ const cb = animDoneCallback; animDoneCallback = null; cb(); }
+  }
+}
+
+function replayTiming(){
+  if (!hasEvent) { flash("Fire an event first."); return; }
+  if (animating) return;
+  
+  // Save current game state so replay doesn't reset guessing progress
+  const savedAwaiting = awaitingGuess;
+  const savedStage = guessStage;
+  const savedPanelDisplay = guessPanel.style.display;
+  const savedComment = commentOverlay.innerHTML;
+  const savedCommentDisplay = commentOverlay.style.display;
+  
+  startAnimation(() => {
+    // Restore game state exactly as it was before replay
+    awaitingGuess = savedAwaiting;
+    guessStage = savedStage;
+    guessPanel.style.display = savedPanelDisplay;
+    if (savedAwaiting){
+      stepFlavor.classList.toggle('active', savedStage === 'flavor');
+      energyPanel.style.display = savedStage === 'energy' ? 'block' : 'none';
+      energyPanel.classList.toggle('active', savedStage === 'energy');
+      directionPanel.style.display = savedStage === 'direction' ? 'block' : 'none';
+      directionPanel.classList.toggle('active', savedStage === 'direction');
+    }
+    // Restore the comment overlay
+    commentOverlay.innerHTML = savedComment;
+    commentOverlay.style.display = savedCommentDisplay;
+    if (!savedAwaiting){
+      setComment("Timing replayed. Fire a new neutrino or continue building.");
+    }
+  });
+}
+
+// ========================================================================
+//  Guess flow: Flavor → Energy → Direction
+// ========================================================================
+function submitFlavorGuess(type){
+  if (!awaitingGuess || guessStage !== 'flavor') return;
+  currentGuessType = type;
+  userFlavorTally[type]++;
+  flavorCorrect = (type === currentTruth.type);
+
+  guessStage = 'energy';
+  stepFlavor.classList.remove('active');
+  energyPanel.style.display = 'block';
+  energyPanel.classList.add('active');
+
+  const names = { cascade:'Cascade', track:'Track', double:'Double-bang' };
+  setComment(`Flavor guess: <b>${flavorCorrect ? '<span style="color:#0f8">✓ correct</span>' : '<span style="color:#f66">✗ wrong</span> (was '+names[currentTruth.type]+')'}</b><br>` +
+             `<b>Step 2:</b> Estimate the energy from total signal.`);
+  updateEReadout();
+}
+
+function submitEnergyGuess(){
+  if (!awaitingGuess || guessStage !== 'energy') return;
+  const eGuess = sliderToEnergy(parseFloat(eSlider.value));
+  const eTrue = currentTruth.energy;
+  const err = Math.abs(Math.log10(eGuess) - Math.log10(eTrue));
+  const eScore = Math.max(0, 1 - err / ENERGY_TOLERANCE);
+
+  eTruth.innerHTML = `True energy: <b>${eTrue.toFixed(eTrue < 10 ? 1 : 0)} GeV</b> ` +
+                     `(off by ${err.toFixed(2)} decades → ${(eScore * 100).toFixed(0)}% energy credit)`;
+
+  // For cascade (electron neutrino), show everything now and finalize
+  if (currentTruth.type === 'cascade'){
+    revealLocation();
+    revealDirection();
+    setComment(`Cascade event — no direction guessing needed.<br>Energy guess submitted.`);
+    const eInfo = `Cascade event — True energy: <b>${eTrue.toFixed(eTrue < 10 ? 1 : 0)} GeV</b> ` +
+                  `(your guess was off by ${err.toFixed(2)} decades — ${(eScore * 100).toFixed(0)}% energy credit)`;
+    finalizeRound(eScore, 0, eInfo);
+    return;
+  }
+
+  // For track/double (muon/tau): go straight to direction step
+  guessStage = 'direction';
+  energyPanel.classList.remove('active');
+  directionPanel.style.display = 'block';
+  directionPanel.classList.add('active');
+  dirGuessDeg = 0;
+  updateDial();
+  dirTruth.textContent = '';
+  setComment(`<b>Step 3:</b> Drag the dial to match the track direction. ` +
+             `0° = right, 90° = up, 180° = left, 270° = down.`);
+}
+
+function submitDirectionGuess(){
+  if (!awaitingGuess || guessStage !== 'direction') return;
+
+  // Angular error (shortest arc)
+  const dialToCanvasAngle = ((-dirGuessDeg + 90) % 360 + 360) % 360;
+  let dErr = Math.abs(dialToCanvasAngle - dirTruthDeg) % 360;
+  dErr = Math.min(dErr, 360 - dErr);
+  const dirScore = Math.max(0, 1 - dErr / 90);
+
+  // Show true direction with the green arrow
+  if (trueDirArrowMesh && currentTruth){
+    const trueAngleRad = dirTruthDeg * Math.PI / 180;
+    trueDirArrowMesh.position.set(0, 0, 0.4);
+    trueDirArrowMesh.rotation.z = trueAngleRad;
+    trueDirArrowMesh.visible = true;
+  }
+
+  dirTruth.innerHTML = `True direction: <b>${dirTruthDeg.toFixed(0)}°</b> ` +
+                       `(your guess: ${dirGuessDeg.toFixed(0)}° → off by ${dErr.toFixed(0)}° → ${(dirScore * 100).toFixed(0)}% credit)`;
+
+  // Reveal event visuals now that direction is guessed
+  revealLocation();
+  revealDirection();
+
+  const eGuess = sliderToEnergy(parseFloat(eSlider.value));
+  const eTrue = currentTruth.energy;
+  const eErr = Math.abs(Math.log10(eGuess) - Math.log10(eTrue));
+  const eScore = Math.max(0, 1 - eErr / ENERGY_TOLERANCE);
+
+  finalizeRound(eScore, dirScore);
+}
+
+function finalizeRound(eScore, dirScore, extraInfo){
+  dirScore = dirScore || 0;
+
+  // Explicitly reset animation state to prevent "wait for timing" stuck state
+  animating = false;
+  animDoneCallback = null;
+  if (animStuckTimer) { clearTimeout(animStuckTimer); animStuckTimer = null; }
+  timeInner.style.width = '0%';
+
+  // Weighted score
+  let roundScore;
+  if (currentGuessType === 'cascade'){
+    roundScore = 0.5 * (flavorCorrect ? 1 : 0) + 0.5 * eScore;
+  } else {
+    roundScore = 0.4 * (flavorCorrect ? 1 : 0) + 0.3 * eScore + 0.3 * dirScore;
+  }
+
+  totalScore += roundScore;
+  round++;
+
+  // Track history
+  energyGuesses.push(sliderToEnergy(parseFloat(eSlider.value)));
+  energyTruths.push(currentTruth.energy);
+  flavorCounts[currentTruth.type]++;
+  flavorGuesses[currentTruth.type] += flavorCorrect ? 1 : 0;
+
+  // Money reward
+  const reward = Math.round(roundScore * REWARD_PER_ROUND);
+  money += reward;
+  updateMoneyHUD();
+
+  // Hide comment overlay since round is done
+  hideComment();
+
+  if (round >= TOTAL_ROUNDS){
+    // Check all-flavor bonus
+    if (!bonusAwarded){
+      let allFlavorCorrect = true;
+      for (let f of ['cascade', 'track', 'double']){
+        if (flavorCounts[f] > 0 && flavorGuesses[f] < flavorCounts[f]){
+          allFlavorCorrect = false;
+        }
+      }
+      const allFlavorsAppeared = flavorCounts.cascade > 0 && flavorCounts.track > 0 && flavorCounts.double > 0;
+      if (allFlavorCorrect && allFlavorsAppeared){
+        bonusAwarded = true;
+        money += FLAVOR_BONUS;
+        updateMoneyHUD();
+        bonusMsg.textContent = `🎉 All flavor guesses correct! Bonus: +$${FLAVOR_BONUS}`;
+      } else {
+        bonusMsg.textContent = `All ${TOTAL_ROUNDS} rounds complete. View results for details.`;
+      }
+    }
+
+    // Show game over panel
+    gameOver = true;
+    gameOverPanel.style.display = 'block';
+    viewResultsBtn.disabled = false;
+    replayBtn.disabled = true;
+    infoEl.innerHTML = `All ${TOTAL_ROUNDS} rounds complete! Final score: ${((totalScore/round)*100).toFixed(1)}% ` +
+                       `($${Math.round(money)}). Choose Continue to keep building or End Game for results.` +
+                       (extraInfo ? `<br>${extraInfo}` : '');
+  } else {
+    infoEl.innerHTML = `Round scored! Reward: <b>+$${reward}</b> (${(roundScore*100).toFixed(0)}% accuracy). ` +
+                       `Press <b>Fire Neutrino</b> for the next event.` +
+                       (extraInfo ? `<br>${extraInfo}` : '');
+  }
+
+  updateScoreboard();
+  awaitingGuess = false;
+  guessStage = null;
+  guessPanel.style.display = 'none';
+  gameOverPanel.style.display = gameOver ? 'block' : 'none';
+}
+
+// ========================================================================
+//  Scoreboard
+// ========================================================================
+function updateScoreboard(){
+  const pct = round > 0 ? (totalScore / round * 100) : 0;
+  scoreEl.innerHTML = `Round ${round} / ${TOTAL_ROUNDS} &nbsp;|&nbsp; Score: ${pct.toFixed(0)}%`;
+}
+
+// ========================================================================
+//  Auto Grid (budget-limited)
+// ========================================================================
+
+function buildGrid(){
+  if (!canEdit()) return;
+  const N = 20, span = 200;
+  let placed = 0;
+
+  // Generate all grid positions with their (i,j) indices
+  const positions = [];
+  const center = (N - 1) / 2;
+  for (let i=0; i<N; i++){
+    for (let j=0; j<N; j++){
+      const x = -span/2 + i * (span/(N - 1));
+      const y = -span/2 + j * (span/(N - 1));
+      const dist = Math.max(Math.abs(i - center), Math.abs(j - center)); // Chebyshev distance -> square rings
+      // Use Math.hypot(i - center, j - center) instead for circular expansion
+      positions.push({ x, y, dist });
+    }
+  }
+
+  // Sort by distance from center, smallest first
+  positions.sort((a, b) => a.dist - b.dist);
+
+  // Place sensors in that order
+  for (const pos of positions){
+    if (!canAfford(buyType)){
+      flash(`Auto Grid stopped after ${placed} sensors — out of cash.`);
+      return;
+    }
+    addSensor(pos.x, pos.y, buyType);
+    placed++;
+  }
+
+  flash(`Auto Grid placed ${placed} ${buyType} sensors.`);
+}
+// ========================================================================
+//  Clear / Reset
+// ========================================================================
+function clearAll(){
+  // Force-reset any stuck animation
+  animating = false;
+  animDoneCallback = null;
+  if (animStuckTimer) { clearTimeout(animStuckTimer); animStuckTimer = null; }
+
+  // Refund for each sensor
+  let back = 0;
+  sensors.forEach(s => back += sensorRefund(s.type));
+  money += back;
+  updateMoneyHUD();
+
+  sensors.forEach(s => scene.remove(s.mesh));
+  sensors = [];
+  selectedSet = new Set();
+  countEl.textContent = 0;
+  updateDetectorTypeInfo();
+  clearConeVisuals();
+  cancelPendingActions();
+  hideCtxMenu();
+  signalNum.textContent = '0';
+  timeInner.style.width = '0%';
+  guessPanel.style.display = 'none';
+  gameOverPanel.style.display = 'none';
+  awaitingGuess = false;
+  hasEvent = false;
+  replayBtn.disabled = true;
+  dirArrowMesh.visible = false;
+  flash(`Cleared all sensors — refunded $${Math.round(back)}.`);
+}
+
+function resetGame(){
+  // Force-reset any stuck animation
+  animating = false;
+  animDoneCallback = null;
+  if (animStuckTimer) { clearTimeout(animStuckTimer); animStuckTimer = null; }
+
+  round = 0;
+  totalScore = 0;
+  money = START_CASH;
+  bankrupt = false;
+  bonusAwarded = false;
+  gameOver = false;
+  awaitingGuess = false;
+  guessStage = null;
+  currentTruth = null;
+  hasEvent = false;
+  energyGuesses = [];
+  energyTruths = [];
+  flavorCounts = { cascade: 0, track: 0, double: 0 };
+  flavorGuesses = { cascade: 0, track: 0, double: 0 };
+  userFlavorTally = { cascade: 0, track: 0, double: 0 };
+  currentGuessType = null;
+  dirTruthDeg = null;
+  dirGuesses = [];
+  selectedSet = new Set();
+  cancelPendingActions();
+  hideCtxMenu();
+  clearConeVisuals();
+  resetSensorSignals();
+  signalNum.textContent = '0';
+  timeInner.style.width = '0%';
+  guessPanel.style.display = 'none';
+  gameOverPanel.style.display = 'none';
+  replayBtn.disabled = true;
+  viewResultsBtn.disabled = true;
+  dirArrowMesh.visible = false;
+  updateMoneyHUD();
+  updateScoreboard();
+  infoEl.innerHTML = "Game reset. Place sensors and press <b>Fire Neutrino</b> to begin.";
+
+  // Reset clears sensors too.
+  sensors.forEach(s => scene.remove(s.mesh));
+  sensors = [];
+  countEl.textContent = 0;
+  updateDetectorTypeInfo();
+}
+
+// ========================================================================
+//  Selection & editing
+// ========================================================================
+function screenToWorld(e){
+  const rect = renderer.domElement.getBoundingClientRect();
+  const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  const ny = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+  return { x: nx * (viewSize * aspect / 2), y: ny * (viewSize / 2) };
+}
+
+function snapVal(v){
+  return snapEnabled ? Math.round(v / GRID_SPACING) * GRID_SPACING : v;
+}
+
+function findSensorAt(wx, wy){
+  let best = -1, bestD2 = SELECT_HIT_RADIUS * SELECT_HIT_RADIUS;
+  sensors.forEach((s, i) => {
+    const dx = s.x - wx, dy = s.y - wy;
+    const d2 = dx*dx + dy*dy;
+    if (d2 < bestD2){ bestD2 = d2; best = i; }
+  });
+  return best;
+}
+
+function setSensorSelected(i, sel){
+  sensors[i].ring.visible = sel;
+  if (sel) selectedSet.add(i); else selectedSet.delete(i);
+}
+
+function clearSelection(){
+  selectedSet.forEach(i => { if (sensors[i]) sensors[i].ring.visible = false; });
+  selectedSet.clear();
+  updateSelInfo();
+}
+
+function selectOnly(indices){
+  clearSelection();
+  indices.forEach(i => setSensorSelected(i, true));
+  updateSelInfo();
+}
+
+function selectionCentroid(){
+  const idxs = [...selectedSet];
+  const cx = idxs.reduce((a,i)=>a+sensors[i].x,0)/idxs.length;
+  const cy = idxs.reduce((a,i)=>a+sensors[i].y,0)/idxs.length;
+  return { cx, cy };
+}
+
+function updateSelInfo(){
+  if (selectedSet.size > 0){
+    selInfoEl.style.display = 'block';
+    selInfoEl.textContent = `${selectedSet.size} sensor${selectedSet.size>1?'s':''} selected — drag to move, right-click for options.`;
+  } else if (!pendingPaste && !pendingMove){
+    selInfoEl.style.display = 'none';
+  }
+}
+
+// ---------- Clipboard & move operations ----------
+function copyFormation(){
+  if (selectedSet.size === 0) return;
+  const { cx, cy } = selectionCentroid();
+  clipboardFormation = [...selectedSet].map(i => ({ dx: sensors[i].x-cx, dy: sensors[i].y-cy }));
+  pendingPaste = true;
+  pendingMove = false;
+  selInfoEl.style.display = 'block';
+  selInfoEl.textContent = `Copied ${clipboardFormation.length}-sensor formation. Click to stamp it down (Esc to cancel).`;
+}
+
+function pasteFormationAt(wx, wy){
+  if (!clipboardFormation) return;
+  const cx = snapVal(wx), cy = snapVal(wy);
+  const newIdxs = [];
+  clipboardFormation.forEach(p => {
+    if (!canAfford(buyType)){
+      flash("Out of cash — paste stopped.");
+      return;
+    }
+    addSensor(cx + p.dx, cy + p.dy, buyType);
+    newIdxs.push(sensors.length - 1);
+  });
+  if (newIdxs.length > 0) selectOnly(newIdxs);
+  selInfoEl.textContent = `Stamped formation. Click again to stamp another copy (Esc to stop).`;
+}
+
+function armMove(){
+  if (selectedSet.size === 0) return;
+  pendingMove = true;
+  pendingPaste = false;
+  selInfoEl.style.display = 'block';
+  selInfoEl.textContent = `Click a destination to move ${selectedSet.size} sensor${selectedSet.size>1?'s':''} (Esc to cancel).`;
+}
+
+function moveSelectionTo(wx, wy){
+  if (!canEdit()) return;
+  const { cx, cy } = selectionCentroid();
+  const dx = snapVal(wx) - cx, dy = snapVal(wy) - cy;
+  selectedSet.forEach(i => {
+    const s = sensors[i];
+    s.x += dx; s.y += dy;
+    s.mesh.position.set(s.x, s.y, s.mesh.position.z);
+  });
+  pendingMove = false;
+  updateSelInfo();
+}
+
+function deleteSelected(){
+  if (selectedSet.size === 0) return;
+  if (!canEdit()) return;
+
+  let back = 0;
+  const toDelete = [...selectedSet].sort((a,b) => b - a); // delete highest index first
+  toDelete.forEach(i => {
+    back += sensorRefund(sensors[i].type);
+    scene.remove(sensors[i].mesh);
+  });
+  money += back;
+  updateMoneyHUD();
+  sensors = sensors.filter((s,i) => !selectedSet.has(i));
+  selectedSet = new Set();
+  countEl.textContent = sensors.length;
+  updateDetectorTypeInfo();
+  updateSelInfo();
+  flash(`Deleted — refunded $${Math.round(back)}.`);
+}
+
+function cancelPendingActions(){
+  pendingPaste = false;
+  pendingMove = false;
+  updateSelInfo();
+}
+
+function hideCtxMenu(){ ctxMenuEl.style.display = 'none'; }
+
+function showCtxMenu(clientX, clientY){
+  const hasSel = selectedSet.size > 0;
+  document.getElementById('ctxCopy').disabled = !hasSel;
+  document.getElementById('ctxMove').disabled = !hasSel;
+  document.getElementById('ctxDelete').disabled = !hasSel;
+  ctxMenuEl.style.display = 'block';
+  const x = Math.min(clientX, window.innerWidth - 190 - 8);
+  const y = Math.min(clientY, window.innerHeight - 110 - 8);
+  ctxMenuEl.style.left = x + 'px';
+  ctxMenuEl.style.top = y + 'px';
+}
+
+// ========================================================================
+//  Results Modal
+// ========================================================================
+function showResults(){
+  const finalScore = round > 0 ? (totalScore / round * 100).toFixed(1) : '0.0';
+  document.getElementById('finalScore').textContent = finalScore;
+
+  // Round results summary
+  roundResults.innerHTML = `Played ${round} rounds | Cash: $${Math.round(money)} | ` +
+    (bonusAwarded ? `🎉 All-flavor bonus: +$${FLAVOR_BONUS}` : '');
+
+  // Energy spectrum
+  const N = energyTruths.length;
+  const nBins = Math.max(5, Math.min(12, Math.round(N/2)));
+  const trueHist = buildEnergyHistogram(energyTruths, nBins);
+  const guessHist = buildEnergyHistogram(energyGuesses, nBins);
+  const theoryPts = theoreticalSpectrumPoints(N);
+
+  const eCtx = document.getElementById('energyChart');
+  if (eCtx._chart) eCtx._chart.destroy();
+  eCtx._chart = new Chart(eCtx, {
+    type: 'scatter',
+    data: {
+      datasets: [
+        {
+          label: 'Theoretical spectrum (E⁻¹)',
+          data: theoryPts,
+          type: 'line',
+          borderColor: '#0af',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          order: 3
+        },
+        {
+          label: 'True energies',
+          data: trueHist.map(b => ({ x: b.eCenter, y: b.flux > 0 ? b.flux : null })),
+          borderColor: '#0f8',
+          backgroundColor: '#0f8',
+          borderWidth: 2,
+          pointRadius: 5,
+          showLine: true,
+          borderDash: [5, 5],
+          order: 2
+        },
+        {
+          label: 'Your guesses',
+          data: guessHist.map(b => ({ x: b.eCenter, y: b.flux > 0 ? b.flux : null })),
+          borderColor: '#f66',
+          backgroundColor: '#f66',
+          borderWidth: 2,
+          pointRadius: 5,
+          showLine: true,
+          order: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#cfe' } } },
+      scales: {
+        x: {
+          type: 'logarithmic',
+          min: E_MIN, max: E_MAX,
+          title: { display: true, text: 'Energy E (GeV, log scale)', color: '#cfe' },
+          ticks: { color: '#cfe' },
+          grid: { color: 'rgba(100,100,100,0.2)' }
+        },
+        y: {
+          type: 'logarithmic',
+          title: { display: true, text: 'Flux dN/dE (events per GeV)', color: '#cfe' },
+          ticks: { color: '#cfe' },
+          grid: { color: 'rgba(100,100,100,0.2)' }
+        }
+      }
+    }
+  });
+
+  // Flavor charts
+  const flavorHTML = ['cascade', 'track', 'double'].map(flavor => {
+    const total = flavorCounts[flavor];
+    const correct = flavorGuesses[flavor];
+    const pct = total > 0 ? Math.round(correct/total*100) : 0;
+    const name = { cascade:'Cascade (νₑ/NC)', track:'Track (ν_μ)', double:'Double-bang (ν_τ)' }[flavor];
+    return `
+      <div class="flavorBox">
+        <div class="label">${name}</div>
+        <div class="statRow green">True: ${total} event${total!==1?'s':''}</div>
+        <div class="statRow red">Correct: ${correct}/${total} (${pct}%)</div>
+        <div style="margin-top:8px;font-size:11px;color:#8ab;">
+          <span style="display:inline-block;width:100px;height:14px;background:#012;border-radius:3px;overflow:hidden;">
+            <span style="display:inline-block;height:100%;width:${total>0?correct/total*100:0}%;background:#0f8;border-radius:3px;"></span>
+          </span>
+        </div>
+      </div>
+    `;
+  }).join('');
+  document.getElementById('flavorChart').innerHTML = flavorHTML;
+
+  // Flavor ratio
+  const order = ['cascade','track','double'];
+  const guessCounts = order.map(f => userFlavorTally[f]);
+  const guessRatioStr = guessCounts.join(':');
+
+  document.getElementById('flavorRatio').innerHTML = `
+    <div class="ratioBlock">
+      <div class="ratioLabel">Your guessed flavor mix<br>(cascade : track : double)</div>
+      <div class="ratioValue you">${guessRatioStr}</div>
+    </div>
+    <div class="ratioBlock">
+      <div class="ratioLabel">Actual game ratio<br>(cascade : track : double)</div>
+      <div class="ratioValue actual">${FLAVOR_PCT_E.toFixed(0)} : ${FLAVOR_PCT_MU.toFixed(0)} : ${(100 - FLAVOR_PCT_E - FLAVOR_PCT_MU).toFixed(0)}</div>
+    </div>
+  `;
+  const ratioNote = document.createElement('div');
+  ratioNote.className = 'ratioNote';
+  const tauPct = Math.max(0, 100 - FLAVOR_PCT_E - FLAVOR_PCT_MU);
+  ratioNote.textContent = `Game flavor ratio: νₑ ${FLAVOR_PCT_E.toFixed(0)}% (cascade) : ν_μ ${FLAVOR_PCT_MU.toFixed(0)}% (track) : ν_τ ${tauPct.toFixed(0)}% (double-bang). True counts this game: ${order.map(f=>flavorCounts[f]).join(':')}. Your guesses: ${guessRatioStr}.`;
+  document.getElementById('flavorRatio').appendChild(ratioNote);
+
+  document.getElementById('resultsModal').style.display = 'block';
+}
+
+function closeResults(){
+  document.getElementById('resultsModal').style.display = 'none';
+}
+
+function buildEnergyHistogram(values, nBins){
+  if (values.length === 0) return [];
+  const edges = [];
+  for (let i=0;i<=nBins;i++) edges.push(LOG_MIN + (i/nBins)*(LOG_MAX-LOG_MIN));
+  const counts = new Array(nBins).fill(0);
+  values.forEach(v => {
+    let idx = Math.floor((Math.log10(v) - LOG_MIN) / (LOG_MAX-LOG_MIN) * nBins);
+    idx = Math.max(0, Math.min(nBins-1, idx));
+    counts[idx]++;
+  });
+  return edges.map((_, i) => {
+    if (i >= nBins) return null;
+    const eLo = Math.pow(10, edges[i]);
+    const eHi = Math.pow(10, edges[i+1]);
+    const eCenter = Math.sqrt(eLo * eHi);
+    const dE = eHi - eLo;
+    const flux = dE > 0 ? counts[i]/dE : 0;
+    return { eCenter, flux, count: counts[i], eLo, eHi };
+  }).filter(Boolean);
+}
+
+function theoreticalSpectrumPoints(N){
+  const L = LOG_MAX - LOG_MIN;
+  const C = N / (L * Math.LN10);
+  const pts = [];
+  const steps = 60;
+  for (let i=0; i<=steps; i++){
+    const logE = LOG_MIN + (i/steps) * (LOG_MAX-LOG_MIN);
+    const E = Math.pow(10, logE);
+    pts.push({ x: E, y: C/E });
+  }
+  return pts;
+}
+
+// ========================================================================
+//  Continue / End game
+// ========================================================================
+function continueGame(){
+  gameOver = false;
+  gameOverPanel.style.display = 'none';
+  viewResultsBtn.disabled = true;
+  replayBtn.disabled = false;
+  // Add more rounds
+  TOTAL_ROUNDS += 10;
+  roundsBtn.textContent = `Rounds: ${TOTAL_ROUNDS}`;
+  infoEl.innerHTML = `Game continues! Next target: ${TOTAL_ROUNDS} events. Fire another neutrino!`;
+  updateScoreboard();
+}
+
+function endGameNow(){
+  gameOver = true;
+  gameOverPanel.style.display = 'block';
+  viewResultsBtn.disabled = false;
+  replayBtn.disabled = true;
+  showResults();
+}
+
+// ========================================================================
+//  Rounds input
+// ========================================================================
+function setRounds(){
+  const n = prompt(`Enter total rounds (current: ${TOTAL_ROUNDS}):`, TOTAL_ROUNDS);
+  if (n && !isNaN(n) && n > 0){
+    TOTAL_ROUNDS = parseInt(n);
+    roundsBtn.textContent = `Rounds: ${TOTAL_ROUNDS}`;
+    resetGame();
+  }
+}
+
+// ========================================================================
+//  Input handlers
+// ========================================================================
+function applyModeCursor(){
+  canvasEl.classList.toggle('select-mode', mode === 'select');
+}
+
+modeBtn.onclick = () => {
+  mode = (mode === 'place') ? 'select' : 'place';
+  modeBtn.textContent = 'Mode: ' + (mode === 'place' ? 'Place Sensors' : 'Select / Edit');
+  modeBtn.classList.toggle('active', mode === 'place');
+  cancelPendingActions();
+  hideCtxMenu();
+  applyModeCursor();
+};
+applyModeCursor();
+
+snapBtn.onclick = () => {
+  snapEnabled = !snapEnabled;
+  snapBtn.textContent = 'Snap: ' + (snapEnabled ? 'On' : 'Off');
+  snapBtn.classList.toggle('active', snapEnabled);
+};
+
+// Medium selection
+document.getElementById('mediumSelect').onchange = function(){
+  currentMedium = this.value;
+};
+
+// Buy type selection
+document.getElementById('buyPMT').onclick = () => {
+  buyType = 'PMT';
+  document.getElementById('buyPMT').classList.add('active');
+  document.getElementById('buySiPM').classList.remove('active');
+};
+document.getElementById('buySiPM').onclick = () => {
+  buyType = 'SiPM';
+  document.getElementById('buySiPM').classList.add('active');
+  document.getElementById('buyPMT').classList.remove('active');
+};
+
+// --- Left-click ---
+canvasEl.addEventListener('click', (e) => {
+  if (e.button !== 0) return;
+  if (mode === 'place'){
+    const { x, y } = screenToWorld(e);
+    addSensor(snapVal(x), snapVal(y), buyType);
+    return;
+  }
+  // Select mode
+  const { x, y } = screenToWorld(e);
+  if (pendingPaste){ pasteFormationAt(x, y); return; }
+  if (pendingMove){ moveSelectionTo(x, y); return; }
+  if (dragMoved) return;
+  const hit = findSensorAt(x, y);
+  if (hit >= 0){
+    selectOnly([hit]);
+  } else {
+    clearSelection();
+  }
+});
+
+// Helper: get stage-relative coordinates (selectBox is positioned inside #stage)
+function stageOffset(){
+  const s = stage.getBoundingClientRect();
+  return { left: s.left, top: s.top };
+}
+
+// --- Mouse down ---
+canvasEl.addEventListener('mousedown', (e) => {
+  if (e.button !== 0 || mode !== 'select') return;
+  hideCtxMenu();
+  dragMoved = false;
+  dragStartWorld = screenToWorld(e);
+  dragStartScreen = { x: e.clientX, y: e.clientY };
+
+  const hit = findSensorAt(dragStartWorld.x, dragStartWorld.y);
+  if (hit >= 0){
+    if (!selectedSet.has(hit)) selectOnly([hit]);
+    dragMode = 'moveSelection';
+    dragSnapshot = [...selectedSet].map(i => ({ i, x: sensors[i].x, y: sensors[i].y }));
+  } else {
+    dragMode = 'rubberband';
+    const off = stageOffset();
+    selectBoxEl.style.display = 'block';
+    selectBoxEl.style.left = (e.clientX - off.left) + 'px';
+    selectBoxEl.style.top = (e.clientY - off.top) + 'px';
+    selectBoxEl.style.width = '0px';
+    selectBoxEl.style.height = '0px';
+  }
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!dragMode) return;
+  const dxScreen = e.clientX - dragStartScreen.x, dyScreen = e.clientY - dragStartScreen.y;
+  if (Math.abs(dxScreen) > 4 || Math.abs(dyScreen) > 4) dragMoved = true;
+
+  if (dragMode === 'rubberband'){
+    const off = stageOffset();
+    const x1 = Math.min(dragStartScreen.x, e.clientX) - off.left;
+    const x2 = Math.max(dragStartScreen.x, e.clientX) - off.left;
+    const y1 = Math.min(dragStartScreen.y, e.clientY) - off.top;
+    const y2 = Math.max(dragStartScreen.y, e.clientY) - off.top;
+    selectBoxEl.style.left = x1 + 'px';
+    selectBoxEl.style.top = y1 + 'px';
+    selectBoxEl.style.width = (x2-x1) + 'px';
+    selectBoxEl.style.height = (y2-y1) + 'px';
+  } else if (dragMode === 'moveSelection' && dragMoved){
+    const world = screenToWorld(e);
+    const dx = world.x - dragStartWorld.x, dy = world.y - dragStartWorld.y;
+    dragSnapshot.forEach(({i,x,y}) => {
+      const s = sensors[i];
+      s.x = snapEnabled ? snapVal(x+dx) : x+dx;
+      s.y = snapEnabled ? snapVal(y+dy) : y+dy;
+      s.mesh.position.set(s.x, s.y, s.mesh.position.z);
+    });
+  }
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (!dragMode) return;
+  if (dragMode === 'rubberband'){
+    selectBoxEl.style.display = 'none';
+    if (dragMoved){
+      const world1 = screenToWorld({clientX: dragStartScreen.x, clientY: dragStartScreen.y});
+      const world2 = screenToWorld(e);
+      const xmin = Math.min(world1.x, world2.x), xmax = Math.max(world1.x, world2.x);
+      const ymin = Math.min(world1.y, world2.y), ymax = Math.max(world1.y, world2.y);
+      const hits = [];
+      sensors.forEach((s,i) => { if (s.x>=xmin && s.x<=xmax && s.y>=ymin && s.y<=ymax) hits.push(i); });
+      if (e.shiftKey) hits.forEach(i => setSensorSelected(i, true));
+      else selectOnly(hits);
+      updateSelInfo();
+    }
+  }
+  dragMode = null;
+  dragSnapshot = null;
+});
+
+// --- Right-click: context menu ---
+canvasEl.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  if (mode !== 'select') return;
+  const { x, y } = screenToWorld(e);
+  const hit = findSensorAt(x, y);
+  if (hit >= 0 && !selectedSet.has(hit)) selectOnly([hit]);
+  if (selectedSet.size === 0) return;
+  showCtxMenu(e.clientX, e.clientY);
+});
+
+document.getElementById('ctxCopy').onclick = () => { hideCtxMenu(); copyFormation(); };
+document.getElementById('ctxMove').onclick = () => { hideCtxMenu(); armMove(); };
+document.getElementById('ctxDelete').onclick = () => { hideCtxMenu(); deleteSelected(); };
+
+window.addEventListener('mousedown', (e) => {
+  if (ctxMenuEl.style.display === 'block' && !ctxMenuEl.contains(e.target)) hideCtxMenu();
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape'){
+    cancelPendingActions();
+    hideCtxMenu();
+    if (dragMode === 'rubberband') selectBoxEl.style.display = 'none';
+    dragMode = null;
+  } else if ((e.key === 'Delete' || e.key === 'Backspace') && mode === 'select' && selectedSet.size > 0){
+    e.preventDefault();
+    deleteSelected();
+  }
+});
+
+// ========================================================================
+//  Button bindings
+// ========================================================================
+document.getElementById('grid').onclick = buildGrid;
+document.getElementById('fire').onclick = fireNeutrino;
+document.getElementById('clear').onclick = clearAll;
+document.getElementById('reset').onclick = resetGame;
+roundsBtn.onclick = setRounds;
+replayBtn.onclick = replayTiming;
+viewResultsBtn.onclick = showResults;
+document.getElementById('continueGame').onclick = continueGame;
+document.getElementById('endGame').onclick = endGameNow;
+
+document.querySelectorAll('#stepFlavor button').forEach(btn => {
+  btn.onclick = () => submitFlavorGuess(btn.dataset.guess);
+});
+eSlider.addEventListener('input', updateEReadout);
+document.getElementById('eSubmit').onclick = submitEnergyGuess;
+document.getElementById('dirSubmit').onclick = submitDirectionGuess;
+
+// ========================================================================
+//  Init
+// ========================================================================
+replayBtn.disabled = true;
+viewResultsBtn.disabled = true;
+updateScoreboard();
+updateMoneyHUD();
+gameOverPanel.style.display = 'none';
+dirArrowMesh.visible = false;
+
+// ========================================================================
+//  Render loop
+// ========================================================================
+function animate(now){
+  requestAnimationFrame(animate);
+  updateAnimation(now || performance.now());
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(animate);
+
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h);
+  aspect = w / h;
+  camera.left = -viewSize * aspect / 2;
+  camera.right = viewSize * aspect / 2;
+  camera.top = viewSize / 2;
+  camera.bottom = -viewSize / 2;
+  camera.updateProjectionMatrix();
+});
+</script>
+</body>
+</html>
