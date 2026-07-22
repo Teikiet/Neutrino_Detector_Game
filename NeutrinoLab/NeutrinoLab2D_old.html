@@ -43,10 +43,13 @@
   #eTruth { font-size:13px; color:#0f8; margin-top:4px; }
   #dirTruth { font-size:13px; color:#0f8; margin-top:4px; }
 
-  /* Direction control */
-  #dirSliderWrap { display:flex; flex-direction:column; gap:8px; margin:8px 0; }
-  #dirSlider { width:100%; accent-color:#0af; }
-  #dirReadout { font-size:13px; font-weight:bold; color:#ff5; }
+  /* Direction dial */
+  #dialWrap { display:flex; align-items:center; gap:10px; margin:8px 0; }
+  #dial { width:110px; height:110px; border-radius:50%; background:#012; border:2px solid #2a6a8a; position:relative; cursor:grab; flex:0 0 auto; }
+  #dial.grabbing { cursor:grabbing; }
+  #dialArrow { position:absolute; left:50%; top:50%; width:4px; height:45px; background:#ff5; transform-origin:bottom center; transform:translate(-50%,-100%) rotate(0deg); border-radius:2px; pointer-events:none; }
+  #dialHub { position:absolute; left:50%; top:50%; width:10px; height:10px; background:#ff5; border-radius:50%; transform:translate(-50%,-50%); pointer-events:none; }
+  #dialReadout { font-size:13px; font-weight:bold; }
 
   /* HUD blocks */
   #moneyBox { font-size:15px; margin:4px 0; }
@@ -188,11 +191,16 @@
 
       <div class="step" id="directionPanel">
         <div><b>Step 3:</b> Point the arrow along the track</div>
-        <div style="font-size:11px;color:#8ab;margin:4px 0;">Use the slider to aim. A preview arrow shows on the event.</div>
-        <div id="dirSliderWrap">
-          <input type="range" id="dirSlider" min="0" max="360" value="0" step="1">
-          <div id="dirReadout">0°</div>
-          <button id="dirSubmit" style="margin-top:8px;">Submit Direction</button>
+        <div style="font-size:11px;color:#8ab;margin:4px 0;">Drag the dial to aim. A preview arrow shows on the event.</div>
+        <div id="dialWrap">
+          <div id="dial">
+            <div id="dialArrow"></div>
+            <div id="dialHub"></div>
+          </div>
+          <div>
+            <div id="dialReadout">0°</div>
+            <button id="dirSubmit" style="margin-top:8px;">Submit Direction</button>
+          </div>
         </div>
         <div id="dirTruth"></div>
       </div>
@@ -574,8 +582,9 @@ function buildDirArrowMesh(){
   trueDirArrowMesh = trueGroup;
 }
 buildDirArrowMesh();
-const dirSlider = document.getElementById('dirSlider');
-const dirReadout = document.getElementById('dirReadout');
+const dial = document.getElementById('dial');
+const dialArrow = document.getElementById('dialArrow');
+const dialReadout = document.getElementById('dialReadout');
 const dirTruth = document.getElementById('dirTruth');
 const gameOverPanel = document.getElementById('gameOverPanel');
 const bonusMsg = document.getElementById('bonusMsg');
@@ -993,12 +1002,11 @@ function revealDirection(){
 }
 
 // ========================================================================
-//  Direction slider
+//  Direction dial
 // ========================================================================
-function updateDirectionInput(){
-  const roundedDeg = Math.round(dirGuessDeg) % 360;
-  dirSlider.value = String(roundedDeg);
-  dirReadout.textContent = `${roundedDeg}°`;
+function updateDial(){
+  dialArrow.style.transform = `translate(-50%, -100%) rotate(${dirGuessDeg}deg)`;
+  dialReadout.textContent = Math.round(dirGuessDeg) + '°';
   // Update canvas arrow
   updateDirCanvasArrow();
 }
@@ -1012,10 +1020,21 @@ function updateDirCanvasArrow(){
   dirArrowMesh.visible = true;
 }
 
-dirSlider.addEventListener('input', ()=>{
-  const rawValue = parseFloat(dirSlider.value);
-  dirGuessDeg = (rawValue % 360 + 360) % 360;
-  updateDirectionInput();
+let dialGrabbing = false;
+dial.addEventListener('mousedown', ()=>{ dialGrabbing = true; dial.classList.add('grabbing'); });
+window.addEventListener('mouseup', ()=>{
+  dialGrabbing = false;
+  dial.classList.remove('grabbing');
+});
+window.addEventListener('mousemove', (e)=>{
+  if (!dialGrabbing) return;
+  const rect = dial.getBoundingClientRect();
+  const cx = rect.left + rect.width/2;
+  const cy = rect.top + rect.height/2;
+  const angle = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI;
+  dirGuessDeg = (angle + 90) % 360;  // 0° = up
+  if (dirGuessDeg < 0) dirGuessDeg += 360;
+  updateDial();
 });
 
 // ========================================================================
@@ -1086,7 +1105,7 @@ function fireNeutrino(){
   // True direction (0° = right, CCW)
   dirTruthDeg = trackAngleDeg;
   dirGuessDeg = 0;
-  updateDirectionInput();
+  updateDial();
 
   // Store truth
   currentTruth = { type, energy, vx, vy, dirTruthDeg };
@@ -1375,9 +1394,9 @@ function submitEnergyGuess(){
   directionPanel.style.display = 'block';
   directionPanel.classList.add('active');
   dirGuessDeg = 0;
-  updateDirectionInput();
+  updateDial();
   dirTruth.textContent = '';
-  setComment(`<b>Step 3:</b> Use the slider to match the track direction. ` +
+  setComment(`<b>Step 3:</b> Drag the dial to match the track direction. ` +
              `0° = right, 90° = up, 180° = left, 270° = down.`);
 }
 
@@ -1502,7 +1521,7 @@ function updateScoreboard(){
 
 function buildGrid(){
   if (!canEdit()) return;
-  const N = 20, span = 250;
+  const N = 20, span = 200;
   let placed = 0;
 
   // Generate all grid positions with their (i,j) indices
