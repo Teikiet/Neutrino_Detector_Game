@@ -763,9 +763,7 @@ function constrainDirectionSlider(){
   const f = Math.random();
   let minDeg = dirTruthDeg - f * totalRange;
   let maxDeg = dirTruthDeg + (1 - f) * totalRange;
-  // Clamp to valid angle range
-  minDeg = Math.max(0, minDeg);
-  maxDeg = Math.min(360, maxDeg);
+  // Don't clamp to [0, 360] — allow the slider to go beyond to handle wraparound
   dirSlider.min = Math.round(minDeg);
   dirSlider.max = Math.round(maxDeg);
   // Start the slider at a random position within the range
@@ -780,6 +778,7 @@ function resetSliders(){
   dirSlider.min = 0;
   dirSlider.max = 360;
   dirSlider.value = 0;
+  dirGuessDeg = 0;
 }
 
 function updateGridCost(){
@@ -1148,16 +1147,16 @@ function revealDirection(){
 //  Direction slider
 // ========================================================================
 function updateDirectionInput(){
-  const roundedDeg = Math.round(dirGuessDeg) % 360;
-  dirSlider.value = String(roundedDeg);
-  dirReadout.textContent = `${roundedDeg}°`;
+  dirSlider.value = String(Math.round(dirGuessDeg));
+  const displayDeg = ((Math.round(dirGuessDeg) % 360) + 360) % 360;
+  dirReadout.textContent = `${displayDeg}°`;
   // Update canvas arrow
   updateDirCanvasArrow();
 }
 
 function updateDirCanvasArrow(){
   if (!hasEvent || !currentTruth || !dirArrowMesh) return;
-  const canvasAngleDeg = ((-dirGuessDeg + 90) % 360 + 360) % 360;
+  const canvasAngleDeg = ((dirGuessDeg % 360) + 360) % 360;
   const angleRad = canvasAngleDeg * Math.PI / 180;
   dirArrowMesh.position.set(0, 0, 0.5);
   dirArrowMesh.rotation.z = angleRad;
@@ -1165,8 +1164,7 @@ function updateDirCanvasArrow(){
 }
 
 dirSlider.addEventListener('input', ()=>{
-  const rawValue = parseFloat(dirSlider.value);
-  dirGuessDeg = (rawValue % 360 + 360) % 360;
+  dirGuessDeg = parseFloat(dirSlider.value);
   updateDirectionInput();
 });
 
@@ -1536,9 +1534,9 @@ function submitEnergyGuess(){
 function submitDirectionGuess(){
   if (!awaitingGuess || guessStage !== 'direction') return;
 
-  // Angular error (shortest arc)
-  const dialToCanvasAngle = ((-dirGuessDeg + 90) % 360 + 360) % 360;
-  let dErr = Math.abs(dialToCanvasAngle - dirTruthDeg) % 360;
+  // Angular error (shortest arc) — dirGuessDeg is now in canvas convention (0°=right, CCW)
+  const canvasAngle = ((dirGuessDeg % 360) + 360) % 360;
+  let dErr = Math.abs(canvasAngle - dirTruthDeg) % 360;
   dErr = Math.min(dErr, 360 - dErr);
   const dirScore = Math.max(0, 1 - dErr / 90);
 
@@ -1550,8 +1548,9 @@ function submitDirectionGuess(){
     trueDirArrowMesh.visible = true;
   }
 
+  const displayGuessDeg = ((Math.round(dirGuessDeg) % 360) + 360) % 360;
   dirTruth.innerHTML = `True direction: <b>${dirTruthDeg.toFixed(0)}°</b> ` +
-                       `(your guess: ${dirGuessDeg.toFixed(0)}° → off by ${dErr.toFixed(0)}° → ${(dirScore * 100).toFixed(0)}% credit)`;
+                       `(your guess: ${displayGuessDeg}° → off by ${dErr.toFixed(0)}° → ${(dirScore * 100).toFixed(0)}% credit)`;
 
   // Reveal event visuals now that direction is guessed
   revealLocation();
